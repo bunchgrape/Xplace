@@ -437,6 +437,38 @@ bool Database::writeComponents(std::ofstream& ofs) {
     return true;
 }
 
+bool Database::writeNets(ofstream& ofs) {
+    int nNets = nets.size();
+    ofs << "NETS " << nNets << " ;" << endl;
+    for (int i = 0; i < nNets; i++) {
+        Net* net = nets[i];
+        ofstream& oss = ofs;
+        
+        // oss << "   - " << expand_name(net->name) << " \n";
+        oss << "   - " << expand_name(net->name) << " \n";
+        for (Pin* pin : net->pins) {
+            if (pin->iopin) oss << " ( PIN " << " " << pin->type->name() << " )";
+            else  oss << " ( " << expand_name(pin->cell->name()) << " " << pin->type->name() << " )";
+        }
+        // oss << " + USE SIGNAL ;\n";
+        const char use(net->_type);
+        if (use == 'p') {
+            oss << " + USE POWER ;\n";
+        } else if (use == 'g') {
+            oss << " + USE GROUND ;\n";
+        } else if (use == 's') {
+            oss << " + USE SIGNAL ;\n";
+        } else if (use == 'c') {
+            oss << " + USE CLOCK ;\n";
+        } else {
+            oss << ";\n";
+        }
+    }
+
+    ofs << "END NETS\n\n";
+    return true;
+}
+
 bool Database::writeICCAD2017(const string& inputDef, const string& outputDef) {
     std::ifstream ifs(inputDef.c_str());
     if (!ifs.good()) {
@@ -1787,7 +1819,28 @@ int readDefNet(defrCallbackType_e c, defiNet* dnet, defiUserData ud) {
         return 0;
     }
 
-    Net* net = db->addNet(dnet->name(), ndr);
+    string netName(dnet->name());
+    netName = validate_token(netName);
+    // exclude VDD and VSS
+    if (netName == "VDD" || netName == "VSS") {
+        return 0;
+    }
+    Net* net = db->addNet(netName, ndr);
+
+    if (dnet->hasUse()) {
+        const string use(dnet->use());
+        if (use == "POWER") {
+            net->_type = 'p';
+        } else if (use == "GROUND") {
+            net->_type = 'g';
+        } else if (use == "SIGNAL") {
+            net->_type = 's';
+        } else if (use == "CLOCK") {
+            net->_type = 'c';
+        } else {
+            logger.error("unknown use: %s", use.c_str());
+        }
+    }
 
     for (unsigned i = 0; i != (unsigned)dnet->numConnections(); ++i) {
         Pin* pin = nullptr;
@@ -1805,6 +1858,7 @@ int readDefNet(defrCallbackType_e c, defiNet* dnet, defiUserData ud) {
             iopin->is_connected = true;
         } else {
             string cellname(dnet->instance(i));
+            cellname = validate_token(cellname);
             string pinname(dnet->pin(i));
             Cell* cell = db->getCell(cellname);
             if (!cell) {
