@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -41,7 +42,6 @@
 #include <optional>
 #include <unistd.h>
 #include <sys/wait.h>
-
 #include "units.hpp"
 #include "common/common.h"
 
@@ -54,13 +54,10 @@ namespace filesystem = experimental::filesystem;
 };
 #endif
 
-// With higher version, you may not need this. We do not check the version
-// of compiler automatically here.
 #include <variant>
 
 namespace gt {
 
-// --------------------------------------------------------
 
 using namespace std::chrono_literals;
 using namespace std::literals::string_literals;
