@@ -92,6 +92,16 @@ bool TimingArc::is_rising_edge_triggered() const {
     };
 }
 
+// encode TimingType TimingSense from_port_name to_port_name to remove duplicate
+string TimingArc::encode_arc() {
+    int max_type_shift = std::ceil(std::log2(static_cast<int>(TimingType::unknown)));
+    int encode = (static_cast<int>(timing_sense_) << max_type_shift) | static_cast<int>(timing_type_);
+    string encode_str = std::to_string(encode);
+    encode_str +=  "_" + from_port_->name + "_" + to_port_->name; 
+    return encode_str;
+}
+
+
 EnumNameMap<TimingSense> timing_sense_name_map = {{TimingSense::non_unate, "non_unate"},
                                                   {TimingSense::positive_unate, "positive_unate"},
                                                   {TimingSense::negative_unate, "negative_unate"},

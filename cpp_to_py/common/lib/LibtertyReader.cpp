@@ -10,37 +10,13 @@ using std::ifstream;
 
 namespace gt {
 
-const LutTemplate* CellLib::lut_template(const std::string& name) const {
+LutTemplate* CellLib::get_lut_template(const std::string& name) {
     if (auto itr = lut_templates_.find(name); itr == lut_templates_.end()) {
         return nullptr;
     } else {
         return itr->second;
     }
 }
-
-LutTemplate* CellLib::lut_template(const std::string& name) {
-    if (auto itr = lut_templates_.find(name); itr == lut_templates_.end()) {
-        return nullptr;
-    } else {
-        return itr->second;
-    }
-}
-
-// const Cell* CellLib::cell(const std::string& name) const {
-//     if (auto itr = cells.find(name); itr == cells.end()) {
-//         return nullptr;
-//     } else {
-//         return itr->second;
-//     }
-// }
-
-// Cell* CellLib::cell(const std::string& name) {
-//     if (auto itr = cells.find(name); itr == cells.end()) {
-//         return nullptr;
-//     } else {
-//         return itr->second;
-//     }
-// }
 
 std::optional<float> CellLib::extract_operating_conditions(token_iterator& itr, const token_iterator end) {
     std::optional<float> voltage;
@@ -140,7 +116,7 @@ Lut* CellLib::extract_lut(token_iterator& itr, const token_iterator end) {
     }
 
     // Set up the template
-    lut->lut_template = lut_template(lut->name);
+    lut->lut_template = get_lut_template(lut->name);
 
     // Extract the lut group
     if (itr = std::find(itr, end, "{"); itr == end) {
@@ -236,9 +212,13 @@ TimingArc* CellLib::extractTimingArc(token_iterator& itr, const token_iterator e
         } else if (*itr == "timing_type") {
             logger.infoif(++itr == end, "can't get the timing_type in cellpin ");
             timing_arc->timing_type_ = findTimingType(string(*itr));
+        } else if (*itr == "sdf_cond") {
+            logger.infoif(++itr == end, "can't get the sdf_cond in cellpin ");
+            timing_arc->sdf_cond_ = *itr;
+            timing_arc->is_cond_ = true;
         } else if (*itr == "related_pin") {
             logger.infoif(++itr == end, "can't get the related port ");
-            timing_arc->related_pin_name_ = *itr;
+            timing_arc->related_port_name_ = *itr;
         } else if (*itr == "}") {
             stack--;
         } else if (*itr == "{") {
@@ -298,7 +278,7 @@ LibertyPort* CellLib::extractLibertyPort(token_iterator& itr, const token_iterat
             cell_port->min_fanout = std::strtof(itr->data(), nullptr);
         } else if (*itr == "clock") {
             logger.infoif(++itr == end, "can't get the clock status in cellpin");
-            cell_port->is_clock = (*itr == "true") ? true : false;
+            cell_port->is_clock_ = (*itr == "true") ? true : false;
         } else if (*itr == "timing") {
             TimingArc* timing_arc_ = extractTimingArc(itr, end, cell_port);
             bool test = true;
@@ -318,7 +298,7 @@ LibertyPort* CellLib::extractLibertyPort(token_iterator& itr, const token_iterat
     if (stack != 0 || *itr != "}") {
         logger.info("can't find group brace '}' in cell port");
     }
-    
+
     liberty_cell->ports_map_[cell_port->name] = cell_port;
     return cell_port;
 }
@@ -337,7 +317,6 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
         if (*itr == "cell_leakage_power") {
             logger.infoif(++itr == end, "can't get the cell_leakage_power ");
             liberty_cell->leakage_power_ = scale_factors["power"] * std::strtof(itr->data(), nullptr);
-            stage = 1;
         }
         if (*itr == "leakage_power") {
             itr = std::find(itr, end, "{");
@@ -351,16 +330,13 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
                 else if (*itr == "{")
                     stack_1++;
             }
-            stage = 2;
         } else if (*itr == "area") {
             logger.infoif(++itr == end, "can't get area in cell ", liberty_cell->name);
             liberty_cell->area_ = std::strtof(itr->data(), nullptr);
-            stage = 3;
         } else if (*itr == "pin") {
             logger.infoif(++itr == end, "can't get port in cell ", liberty_cell->name);
             LibertyPort* cell_port_ = extractLibertyPort(itr, end, liberty_cell);
             liberty_cell->ports_.push_back(cell_port_);
-            stage = 4;
         } else if (*itr == "bundle") {
             LibertyPort* cell_port_bundle = new LibertyPort();
             liberty_cell->ports_.push_back(cell_port_bundle);
@@ -512,6 +488,39 @@ void CellLib::read(const std::string& file) {
     finish_read();
 }
 
+void CellLib::finish_port_read(LibertyPort* liberty_port) {
+    for (TimingArc* timing_arc : liberty_port->timing_arcs_) {
+        if (timing_arc->related_port_name_.empty()) {
+            logger.warning("timing arc %s.%s.%s has no related pin",
+                           liberty_port->cell_->name.c_str(),
+                           liberty_port->name.c_str(),
+                           timing_arc->timing_type_);
+            continue;
+        }
+        if (auto related_port = liberty_port->cell_->get_port(timing_arc->related_port_name_);
+            related_port == nullptr) {
+            logger.warning("timing arc %s.%s.%s has no related pin",
+                           liberty_port->cell_->name.c_str(),
+                           liberty_port->name.c_str(),
+                           timing_arc->timing_type_);
+        } else {
+            timing_arc->from_port_ = related_port;
+        }
+        timing_arc->to_port_ = timing_arc->liberty_port_;
+    }
+
+    for (TimingArc* timing_arc : liberty_port->timing_arcs_) {
+        timing_arc->encode_str_ = timing_arc->encode_arc();
+        if (liberty_port->timing_arcs_map_.find(timing_arc->encode_str_) != liberty_port->timing_arcs_map_.end()) {
+            TimingArc* old_timing_arc = liberty_port->timing_arcs_map_[timing_arc->encode_str_];
+            if (!timing_arc->is_cond_) {
+                liberty_port->timing_arcs_map_[timing_arc->encode_str_] = timing_arc;
+            }
+        } else
+            liberty_port->timing_arcs_map_[timing_arc->encode_str_] = timing_arc;
+    }
+}
+
 void CellLib::finish_read() {
     for (auto [name, liberty_cell] : lib_cells_) {
         // sort port by name
@@ -519,12 +528,32 @@ void CellLib::finish_read() {
                   liberty_cell->ports_.end(),
                   [](const LibertyPort* a, const LibertyPort* b) { return a->name < b->name; });
 
-        printf(" %s ", liberty_cell->name.c_str());
         for (auto port : liberty_cell->ports_) {
-            // sort timing arc by related pin name
-            printf(" %s ", port->name.c_str());
+            if (port->is_clock_) liberty_cell->is_seq_ = true;
+            if (port->is_bundle_) {
+                for (auto member_port : port->member_ports_) {
+                    finish_port_read(member_port);
+                }
+            } else
+                finish_port_read(port);
         }
-        printf("\n");
+
+        // if (liberty_cell->is_seq_) {
+            for (auto port : liberty_cell->ports_) {
+                LibertyPort* non_bundle_port;
+                if (port->is_bundle_) {
+                    non_bundle_port = port->member_ports_[0];
+                } else
+                    non_bundle_port = port;
+                // std::cout << "cell: " << liberty_cell->name << " port: " << port->name << std::endl;
+                for (auto kvp : non_bundle_port->timing_arcs_map_) {
+                    // string encode_str = kvp.first;
+                    // std::cout << encode_str << std::endl;
+                    TimingArc* timing_arc = kvp.second;
+                    port->timing_arcs_non_cond_non_bundle_.push_back(timing_arc);
+                }
+            }
+        // }
     }
 }
 

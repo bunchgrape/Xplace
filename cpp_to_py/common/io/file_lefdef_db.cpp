@@ -393,6 +393,18 @@ bool Database::readDEFPG(const std::string& file) {
     return true;
 }
 
+string expand_name(const std::string& name) {
+    // add '\' before '[' or ']'
+    std::string result;
+    for (char c : name) {
+        if (c == '[' || c == ']') {
+            result.push_back('\\');
+        }
+        result.push_back(c);
+    }
+    return result;
+}
+
 bool Database::writeComponents(std::ofstream& ofs) {
     int nCells = cells.size();
     ofs << "COMPONENTS " << nCells << " ;" << std::endl;
@@ -437,18 +449,21 @@ bool Database::writeComponents(std::ofstream& ofs) {
     return true;
 }
 
-bool Database::writeNets(ofstream& ofs) {
+bool Database::writeNets(std::ofstream& ofs) {
     int nNets = nets.size();
-    ofs << "NETS " << nNets << " ;" << endl;
+    ofs << "NETS " << nNets << " ;" << std::endl;
     for (int i = 0; i < nNets; i++) {
         Net* net = nets[i];
-        ofstream& oss = ofs;
-        
+        std::ofstream& oss = ofs;
+
         // oss << "   - " << expand_name(net->name) << " \n";
         oss << "   - " << expand_name(net->name) << " \n";
         for (Pin* pin : net->pins) {
-            if (pin->iopin) oss << " ( PIN " << " " << pin->type->name() << " )";
-            else  oss << " ( " << expand_name(pin->cell->name()) << " " << pin->type->name() << " )";
+            if (pin->iopin)
+                oss << " ( PIN "
+                    << " " << pin->type->name() << " )";
+            else
+                oss << " ( " << expand_name(pin->cell->name()) << " " << pin->type->name() << " )";
         }
         // oss << " + USE SIGNAL ;\n";
         const char use(net->_type);

@@ -80,15 +80,13 @@ public:
     unordered_map<string, LutTemplate *> lut_templates_;
     unordered_map<string, LibertyCell *> lib_cells_;
 
+    LutTemplate *get_lut_template(const string &);
+    LibertyCell* get_cell(const std::string& name);
     void read(const string &file);
-    const LutTemplate *lut_template(const string &) const;
-    LutTemplate *lut_template(const string &);
-    // const Cell *cell(const string &) const;
-    // Cell *cell(const string &);
     void finish_read();
+    void finish_port_read(LibertyPort* liberty_port);
 
-
-private:
+public:
     LibertyCell *extractLibertyCell(token_iterator &, const token_iterator);
     LibertyPort *extractLibertyPort(token_iterator &, const token_iterator, LibertyCell *);
     TimingArc *extractTimingArc(token_iterator &, const token_iterator, LibertyPort *);
@@ -115,27 +113,28 @@ public:
     bool is_seq_ = false;
     int num_bits_ = 0;
 
-    // std::unordered_map<std::string, Cellpin> cellpins;
-    // float average_delay();
+public:
+    LibertyPort* get_port(const std::string& name);
 };
 
 class LibertyPort {
 public:
     LibertyPort() = default;
-    // LibertyPort(LibertyCell *, string name, bool is_bundle, LibertyPortSeq *members);
 
 public:
     string name;
     LibertyCell *cell_;
     CellPortDirection direction_;
+    optional<float> port_capacitance_[3];
 
+    bool is_clock_ = false;
     bool is_bundle_ = false;
     vector<LibertyPort *> member_ports_;
 
     vector<TimingArc *> timing_arcs_;
-    optional<float> port_capacitance_[3];
+    map<string, TimingArc *> timing_arcs_map_;
+    vector<TimingArc *> timing_arcs_non_cond_non_bundle_;
 
-    optional<bool> is_clock;
     // optional<float> capacitance;
     // optional<float> fall_capacitance;
     // optional<float> rise_capacitance;
@@ -147,8 +146,6 @@ public:
     optional<float> min_capacitance;
     optional<float> max_transition;
     optional<float> min_transition;
-
-    // std::unordered_map<std::string, std::unordered_map<TimingType, int>> timings_map;
 };
 
 };  // namespace gt

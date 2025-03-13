@@ -77,6 +77,22 @@ void CellLib::tokenize(const std::vector<char>& buf, std::vector<std::string_vie
     }
 }
 
+LibertyCell* CellLib::get_cell(const std::string& name) {
+    if (auto itr = lib_cells_.find(name); itr == lib_cells_.end()) {
+        return nullptr;
+    } else {
+        return itr->second;
+    }
+}
+
+LibertyPort* LibertyCell::get_port(const std::string& name) {
+    if (auto itr = ports_map_.find(name); itr == ports_map_.end()) {
+        return nullptr;
+    } else {
+        return itr->second;
+    }
+}
+
 EnumNameMap<DelayModel> delay_model_name_map = {{DelayModel::generic_cmos, "generic_cmos"},
                                                 {DelayModel::table_lookup, "table_lookup"},
                                                 {DelayModel::cmos2, "cmos2"},

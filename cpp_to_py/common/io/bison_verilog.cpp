@@ -1,6 +1,11 @@
-#include "common/db/Database.h"
-#include "verilog/verilog_driver.hpp"
+#include <unordered_set>
+#include <fstream>
 
+#include "common/db/Cell.h"
+#include "common/db/Database.h"
+#include "common/db/Net.h"
+#include "common/db/Pin.h"
+#include "verilog/verilog_driver.hpp"
 namespace db {
 
 // helper type for the visitor #4
@@ -15,9 +20,10 @@ overloaded(Ts...) -> overloaded<Ts...>;
 class VerilogParser : public verilog::ParserVerilogInterface {
 public:
     Database &db;
-    bool verilog_only;
+    bool lef_read = false;
+    bool def_read = false;
     VerilogParser() = default;
-    VerilogParser(Database *db, bool verilog_only) : db(*db), verilog_only(verilog_only) {}
+    VerilogParser(Database *db, bool lef_read, bool def_read) : db(*db), lef_read(lef_read), def_read(def_read) {}
     virtual ~VerilogParser() {}
     vector<verilog::Port> ports;
 
@@ -31,7 +37,7 @@ public:
         // std::cout << "Port: " << port << '\n';
         auto addIOPin = [&](const std::string &iopinname, const char direction) {
             IOPin *iopin;
-            if (!verilog_only) {
+            if (def_read) {
                 iopin = db.getIOPin(iopinname);
                 if (!iopin) {
                     logger.warning("IO pin is not defined: %s", iopinname.c_str());
@@ -98,42 +104,41 @@ public:
         string cellName(inst.inst_name);
         cellName = validate_token(cellName);
         Cell *cell;
-        if (!verilog_only) {
+        if (def_read) {
             cell = db.getCell(cellName);
             if (!cell) {
                 logger.error("Cell is not defined: %s", cellName.c_str());
                 return;
             }
         } else {
-            string macroName(inst.module_name);
+            // string macroName(inst.module_name);
+            // CellType *celltype = db.getCellType(macroName);
+            // if (!celltype) {
+            //     celltype = db.addCellType(macroName, db.celltypes.size());
+            //     for (auto [cellpin_name, cellpin] : db.cell_libs_[0]->cell(macroName)->cellpins) {
+            //         char direction = 'x';
+            //         char type = 's';
+            //         switch (*cellpin.direction) {
+            //             case gt::CellPortDirection::input:
+            //                 direction = 'i';
+            //                 break;
+            //             case gt::CellPortDirection::output:
+            //                 direction = 'o';
+            //                 break;
+            //             case gt::CellPortDirection::inout:
+            //                 if (cellpin_name != "VDD" && cellpin_name != "vdd" && cellpin_name != "VSS" && cellpin_name != "vss") {
+            //                     logger.warning("unknown pin %s.%s direction: %s", macroName.c_str(), cellpin_name.c_str(), "INOUT");
+            //                 }
+            //                 break;
+            //             default:
+            //                 logger.error("unknown pin %s.%s direction: %s", macroName.c_str(), cellpin_name.c_str(), "UNKNOWN");
+            //                 break;
+            //         }
+            //         PinType* pintype = celltype->addPin(cellpin_name, direction, type);
+            //     }
+            // }
 
-            CellType *celltype = db.getCellType(macroName);
-            if (!celltype) {
-                celltype = db.addCellType(macroName, db.celltypes.size());
-                for (auto [cellpin_name, cellpin] : db.celllib[0]->cell(macroName)->cellpins) {
-                    char direction = 'x';
-                    char type = 's';
-                    switch (*cellpin.direction) {
-                        case gt::CellpinDirection::INPUT:
-                            direction = 'i';
-                            break;
-                        case gt::CellpinDirection::OUTPUT:
-                            direction = 'o';
-                            break;
-                        case gt::CellpinDirection::INOUT:
-                            if (cellpin_name != "VDD" && cellpin_name != "vdd" && cellpin_name != "VSS" && cellpin_name != "vss") {
-                                logger.warning("unknown pin %s.%s direction: %s", macroName.c_str(), cellpin_name.c_str(), "INOUT");
-                            }
-                            break;
-                        default:
-                            logger.error("unknown pin %s.%s direction: %s", macroName.c_str(), cellpin_name.c_str(), "UNKNOWN");
-                            break;
-                    }
-                    PinType* pintype = celltype->addPin(cellpin_name, direction, type);
-                }
-            }
-
-            cell = db.addCell(cellName, celltype);
+            // cell = db.addCell(cellName, celltype);
         }
         for (size_t i = 0; i < inst.pin_names.size(); i++) {
             if (inst.net_names[i].size() > 1) logger.error("Bus net name is not supported\n");
@@ -164,7 +169,7 @@ public:
             Net *net = db.getNet(netName);
             if (!net) logger.error("Net is not defined: %s", netName.c_str());
             Pin *pin;
-            if (!verilog_only) {
+            if (def_read) {
                 pin = cell->pin(pinName);
                 if (!pin) logger.error("Pin is not defined: %s", pinName.c_str());
             } else {
@@ -192,9 +197,8 @@ void removeDuplicates(std::vector<T> &vec) {
               vec.end());
 }
 
-bool Database::readVerilog_yy(const std::string &file, bool verilog_only) {
-    // VerilogParser parser(this, verilog_only);
-    verilog_parser = new VerilogParser(this, verilog_only);
+bool Database::readVerilog_yy(const std::string &file) {
+    verilog_parser = new VerilogParser(this, lef_read, def_read);
     verilog_parser->read(file);
 
     // remove empty nets
@@ -209,34 +213,8 @@ bool Database::readVerilog_yy(const std::string &file, bool verilog_only) {
     // remove duplicates in net pins
     for (auto &net : nets) {
         auto &pins = net->pins;
-
-        // std::sort(pins.begin(), pins.end());
-        // pins.erase(std::unique(pins.begin(), pins.end()), pins.end());
-        // auto ip = std::unique(pins.begin(), pins.end());
-        // // Resizing the vector so as to remove the undefined terms
-        // pins.resize(std::distance(pins.begin(), ip));
-        // set<Pin*> s( pins.begin(), pins.end() );
-        // pins.assign( s.begin(), s.end() );
-
         removeDuplicates(net->pins);
     }
-
-    // debug
-    // for (auto &dbnet : nets) {
-    //     if (!strcmp(dbnet->name.c_str(), "CTS_19")) {
-    //         for (auto &pin : dbnet->pins) {
-    //             string instName;
-    //             if (pin->iopin != nullptr)
-    //                 instName = "";
-    //             else
-    //                 instName = pin->cell->name();
-    //             auto pin_name = instName + ":" + pin->type->name();
-    //             printf("Net: %s, Pin: %s\n", dbnet->name.c_str(), pin_name.c_str());
-    //         }
-    //     }
-    // }
-
-    // exit(0);
 
     return true;
 }
@@ -254,65 +232,65 @@ string tokenize_name(const string& name) {
     return new_name;
 }
 
-bool Database::write_verilog(const std::string& file) {
-    ofstream ofs(file.c_str());
-    if (!ofs.good()) {
-        logger.error("cannot open verilog file: %s", file.c_str());
-        return false;
-    }
+// bool Database::write_verilog(const std::string& file) {
+//     ofstream ofs(file.c_str());
+//     if (!ofs.good()) {
+//         logger.error("cannot open verilog file: %s", file.c_str());
+//         return false;
+//     }
 
-    ofs << "module " << module_name << " (" << endl;
+//     ofs << "module " << module_name << " (" << endl;
 
-    for (int i = 0; i < verilog_parser->ports.size(); i++) {
-        auto &port = verilog_parser->ports[i];
-        for (auto &name : port.names) {
-            ofs << "  " << name;
-        }
-        if (i != verilog_parser->ports.size() - 1) ofs << ",\n";
-        else ofs << ");\n";
-    }
+//     for (int i = 0; i < verilog_parser->ports.size(); i++) {
+//         auto &port = verilog_parser->ports[i];
+//         for (auto &name : port.names) {
+//             ofs << "  " << name;
+//         }
+//         if (i != verilog_parser->ports.size() - 1) ofs << ",\n";
+//         else ofs << ");\n";
+//     }
 
-    for (int i = 0; i < verilog_parser->ports.size(); i++) {
-        auto &port = verilog_parser->ports[i];
-        for (auto &name : port.names) {
-            if (port.dir == verilog::PortDirection::INPUT || port.dir == verilog::PortDirection::OUTPUT) {
-                if ((port.beg != -1) && (port.end != -1)) {
-                    ofs << "  " << ((port.dir == verilog::PortDirection::INPUT) ? "input " : "output ") << "[" << port.beg << ":" << port.end << "] " << name ;
-                } else {
-                    ofs << "  " << ((port.dir == verilog::PortDirection::INPUT) ? "input " : "output ") << name;
-                }
-            }
-        }
-        ofs << ";\n";
-    }
+//     for (int i = 0; i < verilog_parser->ports.size(); i++) {
+//         auto &port = verilog_parser->ports[i];
+//         for (auto &name : port.names) {
+//             if (port.dir == verilog::PortDirection::INPUT || port.dir == verilog::PortDirection::OUTPUT) {
+//                 if ((port.beg != -1) && (port.end != -1)) {
+//                     ofs << "  " << ((port.dir == verilog::PortDirection::INPUT) ? "input " : "output ") << "[" << port.beg << ":" << port.end << "] " << name ;
+//                 } else {
+//                     ofs << "  " << ((port.dir == verilog::PortDirection::INPUT) ? "input " : "output ") << name;
+//                 }
+//             }
+//         }
+//         ofs << ";\n";
+//     }
 
-    for (Net* net : nets) {
-        if (net->is_port) continue;
-        ofs << " wire " << tokenize_name(net->name) << " ; " << endl;
-    } 
-    ofs << endl;
+//     for (Net* net : nets) {
+//         if (net->is_port) continue;
+//         ofs << " wire " << tokenize_name(net->name) << " ; " << endl;
+//     } 
+//     ofs << endl;
 
-    for (Cell* cell : cells) {
-        if (cell->removed) continue;
-        string raw_name = cell->name();
-        string cell_name = tokenize_name(raw_name);
-        ofs << " " << cell->ctype()->name << " " << cell_name << " (";
-        vector<Pin*> cell_pins = cell->pins();
-        bool first_line = true;
-        for (int i = 0; i < cell_pins.size(); i++) {
-            Pin* pin = cell_pins[i];
-            if (!pin->net) continue;
-            if (!first_line) ofs << " ,\n";
-            ofs << "    ." << pin->type->name() << "(" << tokenize_name(pin->net->name) << " )";
-            first_line = false;
-        }
-        ofs << " );\n";
-    } 
+//     for (Cell* cell : cells) {
+//         if (cell->removed) continue;
+//         string raw_name = cell->name();
+//         string cell_name = tokenize_name(raw_name);
+//         ofs << " " << cell->ctype()->name << " " << cell_name << " (";
+//         vector<Pin*> cell_pins = cell->pins();
+//         bool first_line = true;
+//         for (int i = 0; i < cell_pins.size(); i++) {
+//             Pin* pin = cell_pins[i];
+//             if (!pin->net) continue;
+//             if (!first_line) ofs << " ,\n";
+//             ofs << "    ." << pin->type->name() << "(" << tokenize_name(pin->net->name) << " )";
+//             first_line = false;
+//         }
+//         ofs << " );\n";
+//     } 
 
 
-    ofs << "endmodule" << endl;
-    ofs.close();
-    return true;
-}
+//     ofs << "endmodule" << endl;
+//     ofs.close();
+//     return true;
+// }
 
 }

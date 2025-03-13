@@ -1,8 +1,8 @@
 #pragma once
+#include <string>
+
 #include "EnumNameMap.h"
 #include "Helper.h"
-
-#include <string>
 using std::string;
 
 namespace gt {
@@ -13,7 +13,7 @@ class TimingArc;
 struct LutTemplate;
 class Lut;
 
-enum class TimingSense { non_unate = 0, positive_unate = 1, negative_unate = 2, unknown = -1 };
+enum class TimingSense { non_unate, positive_unate, negative_unate, unknown };
 
 enum class TimingType {
     clear,
@@ -63,22 +63,27 @@ public:
     TimingArc() = default;
     // TimingArc(TimingArcSet* set, LibertyPort* from, LibertyPort* to, Tran irf, Tran orf);
     int id = -1;
+    string encode_str_;
 
     LibertyCell* cell_;
     LibertyPort* liberty_port_;
 
-
     TimingType timing_type_;
     TimingSense timing_sense_;
-    string related_pin_name_ = "";
+
+    string related_port_name_;
     LibertyPort* from_port_;
     LibertyPort* to_port_;
+
+    string sdf_cond_;
+    bool is_cond_ = false;
     // TimingArcSet* timing_arc_set_;
 
     Lut* cell_delay_[MAX_TRAN];
     Lut* transition_[MAX_TRAN];
     Lut* constraint_[MAX_TRAN];
 
+    string encode_arc();
     bool is_constraint() const;
     bool is_min_constraint() const;
     bool is_max_constraint() const;
@@ -87,6 +92,5 @@ public:
 };
 
 // using TimingView = TimingData<const Timing*, MAX_SPLIT>;
-
 
 };  // namespace gt
