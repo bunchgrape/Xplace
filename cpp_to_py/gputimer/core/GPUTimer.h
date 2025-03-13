@@ -1,0 +1,128 @@
+#pragma once
+#include "common/common.h"
+#include "common/lib/spef/parser-spef.hpp"
+#include "gputimer/base.h"
+#include "common/lib/celllib.h"
+#include "gputimer/db/GTDatabase.h"
+#include "../traits.h"
+
+namespace gt {
+
+class TimingTorchRawDB;
+class GTDatabase;
+class GPULutAllocator;
+
+class GPUTimer {
+public:
+    GPULutAllocator *allocator;
+    GPULutAllocator *d_allocator;
+    GTDatabase& gtdb;
+    TimingTorchRawDB& timing_raw_db;
+    shared_ptr<GTDatabase> gtdb_holder;
+    shared_ptr<TimingTorchRawDB> timing_raw_db_holder;
+    GPUTimer(shared_ptr<GTDatabase> gtdb_, shared_ptr<TimingTorchRawDB> timing_raw_db_);
+    ~GPUTimer();
+    spef::Spef spef;
+    void read_spef(const std::string& file);
+    void write_spef(const std::string& file);
+
+    // === functions ===
+    void initialize();
+    void levelize();
+    void update_rc_timing(torch::Tensor node_lpos, bool record = false, bool load = false, bool conpensation = false);
+    void update_rc_timing_flute(torch::Tensor node_lpos, bool record = false);
+    void update_rc_timing_spef();
+    void update_states();
+    void update_timing();
+    void update_endpoints();
+    float report_wns(int el);
+    float report_tns_elw(int el);
+    tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> report_wns_and_tns();
+    torch::Tensor report_pin_slack();
+    torch::Tensor report_pin_at();
+    torch::Tensor report_pin_rat();
+    torch::Tensor report_pin_slew();
+    torch::Tensor report_pin_load();
+    torch::Tensor report_ep_slack();
+    torch::Tensor endpoints_index();
+    tuple<vector<int64_t>, vector<float>, vector<float>> report_path(int ep_idx = -1, int el = -1, bool verbose = false);
+    vector<vector<int64_t>> report_K_path(int K, bool verbose = false);
+    tuple<torch::Tensor, torch::Tensor> report_criticality(int K, bool verbose = false, bool deterministic = true);
+    tuple<torch::Tensor, torch::Tensor> report_criticality_threshold(float thrs, bool verbose = false, bool deterministic = true);
+
+    void swap_gate_type(int idx, int bit_group, int bit_index);
+
+public:
+    float time_unit() const;
+
+public:
+    int num_pins, num_arcs, num_timings, num_fanout_pins, num_tests, num_POs;
+    float *pinSlew, *pinLoad, *pinRat, *pinAt;
+    float *pinImpulse, *pinRootDelay, *pinRootRes;
+    float *arcDelay, *arcSlew;
+    float *pinCap, *pinWireCap;
+    float *testRelatedAT, *testConstraint, *testRAT;
+
+    float *__pinSlew__, *__pinLoad__, *__pinRat__, *__pinAt__;
+    float *pinImpulse_ref, *pinLoad_ref, *pinRootDelay_ref;
+    float *pinLoad_ratio, *pinRootDelay_ratio;
+
+    int* pin_num_fanin;
+    index_type *pin_fanout_list_end, *pin_fanout_list;
+    index_type *pin_f_arc_list_end, *pin_f_arc_list;
+    index_type *pin_b_arc_list_end, *pin_b_arc_list;
+    index_type *arc_from_pin, *arc_to_pin;
+    int *arc_types, *arc_timings, *arc_tests;
+
+    index_type* pin_outs;
+    int* test_to_arc;
+    Timing* timings;
+    index_type *level_list_end, *level_list;
+    vector<int> level_list_end_cpu;
+    int* net_is_clock;
+
+    float clock_period;
+    // GPULutAllocator *d_allocator;
+
+public:
+    float* x;
+    float* y;
+    const float* init_x;
+    const float* init_y;
+    const float* node_size_x;
+    const float* node_size_y;
+
+    const float* pin_offset_x;
+    const float* pin_offset_y;
+    index_type *at_prefix_pin;
+    index_type *at_prefix_arc;
+    index_type *at_prefix_attr;
+
+    const int* flat_node2pin_start_map;
+    const int* flat_node2pin_map;
+    const int* pin2node_map;
+
+    const int* flat_net2pin_start_map;
+    const int* flat_net2pin_map;
+    const int* pin2net_map;
+    const bool* net_mask;
+
+    /* row info */
+    int num_nets;
+    int num_movable_nodes;
+    int num_nodes;
+
+    int num_threads;
+
+    float wire_resistance_per_micron;
+    float wire_capacitance_per_micron;
+    int microns;
+    float scale_factor;
+    float res_unit;
+    float cap_unit;
+
+    torch::Tensor endpoints;
+    torch::Tensor slacks;
+};
+
+}  // namespace gt
