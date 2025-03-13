@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -42,8 +41,7 @@
 #include <optional>
 #include <unistd.h>
 #include <sys/wait.h>
-#include "units.hpp"
-#include "common/common.h"
+#include <variant>
 
 #if defined(__has_include) && __has_include(<filesystem>)
 #include <filesystem>
@@ -54,10 +52,10 @@ namespace filesystem = experimental::filesystem;
 };
 #endif
 
-#include <variant>
+#include "units.hpp"
+#include "common/common.h"
 
 namespace gt {
-
 
 using namespace std::chrono_literals;
 using namespace std::literals::string_literals;
@@ -78,7 +76,6 @@ constexpr int MAX_TRAN = 2;
 constexpr std::initializer_list<Split> SPLIT = {MIN, MAX};
 constexpr std::initializer_list<Tran> TRAN = {RISE, FALL};
 
-
 // #define FOR_EACH_EL(el) for(auto el : SPLIT)
 // #define FOR_EACH_RF(rf) for(auto rf : TRAN)
 // #define FOR_EACH_RF_RF(irf, orf) for(auto [irf, orf] : TRANX2)
@@ -93,24 +90,5 @@ constexpr std::initializer_list<Tran> TRAN = {RISE, FALL};
 
 // #define FOR_EACH(i, C) for(auto& i : C)
 // #define FOR_EACH_IF(i, C, s) for(auto& i : C) if(s)
-
-
-// TimingData
-template <typename, size_t ...>
-struct TimingDataHelper;
-
-template <typename T, size_t D0, size_t ... Ds>
-struct TimingDataHelper<T, D0, Ds...> { 
-  using type = std::array<typename TimingDataHelper<T, Ds...>::type, D0>; 
-};
-
-template <typename T>
-struct TimingDataHelper<T>{ 
-  using type = T; 
-};
-
-template <typename T, size_t ... Ds>
-using TimingData = typename TimingDataHelper<T, Ds...>::type;
-
 
 };  // namespace gt

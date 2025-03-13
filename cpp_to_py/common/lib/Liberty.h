@@ -48,22 +48,8 @@ public:
 
     using token_iterator = std::vector<std::string_view>::iterator;
     DelayModel delay_model;
-
     string name;
 
-    // unordered_map<string,
-    //               variant<optional<second_t>,
-    //                       optional<watt_t>,
-    //                       optional<ohm_t>,
-    //                       optional<farad_t>,
-    //                       optional<ampere_t>,
-    //                       optional<volt_t>>>
-    //     default_units = {{"time_unit", optional<second_t>{}},
-    //                      {"power_unit", optional<watt_t>{}},
-    //                      {"resistance_unit", optional<ohm_t>{}},
-    //                      {"capacitance_unit", optional<farad_t>{}},
-    //                      {"current_unit", optional<ampere_t>{}},
-    //                      {"voltage_unit", optional<volt_t>{}}};
     optional<second_t> time_unit_;
     optional<watt_t> power_unit_;
     optional<ohm_t> resistance_unit_;
@@ -99,7 +85,10 @@ public:
     LutTemplate *lut_template(const string &);
     // const Cell *cell(const string &) const;
     // Cell *cell(const string &);
+    void finish_read();
 
+
+private:
     LibertyCell *extractLibertyCell(token_iterator &, const token_iterator);
     LibertyPort *extractLibertyPort(token_iterator &, const token_iterator, LibertyCell *);
     TimingArc *extractTimingArc(token_iterator &, const token_iterator, LibertyPort *);
@@ -107,7 +96,6 @@ public:
     LutTemplate *extract_lut_template(token_iterator &, const token_iterator);
     Lut *extract_lut(token_iterator &, const token_iterator);
 
-private:
     void apply_default_values();
     void uncomment(std::vector<char> &);
     void tokenize(const std::vector<char> &, std::vector<std::string_view> &);
@@ -118,6 +106,7 @@ public:
     LibertyCell() = default;
     string name;
     vector<LibertyPort *> ports_;
+    map<string, LibertyPort *> ports_map_;
 
     vector<float> leakage_powers_;
     optional<float> leakage_power_;
