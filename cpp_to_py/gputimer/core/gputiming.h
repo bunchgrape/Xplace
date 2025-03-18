@@ -1,7 +1,10 @@
 #pragma once
 
+#include <vector>
 #include "common/lib/lut.h"
-#include "common/lib/timing.h"
+#include "common/lib/Timing.h"
+
+using std::vector;
 
 namespace gt {
 
@@ -63,9 +66,9 @@ public:
 
 public:
     GPULutAllocator() = default;
-    __host__ __forceinline__ void AllocateBatch(vector<Timing*> timings) {
-        auto check_lut = [&](auto &lut) {
-            if (lut) {
+    __host__ __forceinline__ void AllocateBatch(vector<TimingArc *> timings) {
+        auto check_lut = [&](Lut *lut) {
+            if (lut->set_) {
                 x_size += lut->indices1.size();
                 y_size += lut->indices2.size();
                 table_size += lut->table.size();
@@ -79,24 +82,24 @@ public:
         num_timings = 0;
         for (auto timing_ptr : timings) {
             auto &timing = *timing_ptr;
-            check_lut(timing.cell_rise);
-            check_lut(timing.cell_fall);
-            check_lut(timing.rise_transition);
-            check_lut(timing.fall_transition);
-            check_lut(timing.rise_constraint);
-            check_lut(timing.fall_constraint);
+            check_lut(timing.cell_delay_[0]);
+            check_lut(timing.cell_delay_[1]);
+            check_lut(timing.transition_[0]);
+            check_lut(timing.transition_[1]);
+            check_lut(timing.constraint_[0]);
+            check_lut(timing.constraint_[1]);
             is_rising_edge_triggered[num_timings] = timing.is_rising_edge_triggered();
             is_falling_edge_triggered[num_timings] = timing.is_falling_edge_triggered();
             is_constraint[num_timings] = timing.is_constraint();
-            if (timing.sense)
-                timing_sense[num_timings] = static_cast<int>(timing.sense.value());
+            if (timing.timing_sense_ != TimingSense::unknown)
+                timing_sense[num_timings] = static_cast<int>(timing.timing_sense_);
             else
                 timing_sense[num_timings] = -1;
             // printf("%d %d %d\n", is_rising_edge_triggered[num_timings], is_falling_edge_triggered[num_timings], timing_sense[num_timings]);
             num_timings++;
         }
 
-        num_luts = num_luts_in_timing * timings.size(); // delay/transitions/constraints * rise/fall
+        num_luts = num_luts_in_timing * timings.size();  // delay/transitions/constraints * rise/fall
         x_array = new float[x_size];
         y_array = new float[y_size];
         table_array = new float[table_size];
@@ -106,15 +109,15 @@ public:
         x_offset = new size_t[num_luts + 1];
         y_offset = new size_t[num_luts + 1];
         table_offset = new size_t[num_luts + 1];
-        lut_template_var = new int[num_luts * 2]; // 0:capacitance/1:transition/2:constraint_transition/3:related_transition/4:input_transition
+        lut_template_var = new int[num_luts * 2];  // 0:capacitance/1:transition/2:constraint_transition/3:related_transition/4:input_transition
         allocated = new bool[num_luts];
         x_offset[0] = 0;
         y_offset[0] = 0;
         table_offset[0] = 0;
 
         num_luts = 0;
-        auto insert_lut = [&](auto &lut) {
-            if (lut) {
+        auto insert_lut = [&](Lut *lut) {
+            if (lut->set_) {
                 num_x[num_luts] = lut->indices1.size();
                 num_y[num_luts] = lut->indices2.size();
                 num_table[num_luts] = lut->table.size();
@@ -147,20 +150,20 @@ public:
                 x_offset[num_luts + 1] = x_offset[num_luts];
                 y_offset[num_luts + 1] = y_offset[num_luts];
                 table_offset[num_luts + 1] = table_offset[num_luts];
-                lut_template_var[num_luts * 2] = -1;        // var1
-                lut_template_var[num_luts * 2 + 1] = -1;    // var2
+                lut_template_var[num_luts * 2] = -1;      // var1
+                lut_template_var[num_luts * 2 + 1] = -1;  // var2
                 allocated[num_luts] = false;
             }
             num_luts++;
         };
         for (auto timing_ptr : timings) {
             auto &timing = *timing_ptr;
-            insert_lut(timing.cell_rise);
-            insert_lut(timing.cell_fall);
-            insert_lut(timing.rise_transition);
-            insert_lut(timing.fall_transition);
-            insert_lut(timing.rise_constraint);
-            insert_lut(timing.fall_constraint);
+            insert_lut(timing.cell_delay_[0]);
+            insert_lut(timing.cell_delay_[1]);
+            insert_lut(timing.transition_[0]);
+            insert_lut(timing.transition_[1]);
+            insert_lut(timing.constraint_[0]);
+            insert_lut(timing.constraint_[1]);
         }
     }
     __host__ __forceinline__ void CopyToGPU() {
@@ -276,7 +279,7 @@ public:
                                         d_table_array[d_table_offset[in_timing_lut] + x_idx[0] * d_num_y[in_timing_lut] + y_idx[1]],
                                         d_table_array[d_table_offset[in_timing_lut] + x_idx[1] * d_num_y[in_timing_lut] + y_idx[1]],
                                         x);
-        
+
         // if ((numeric[0] < 0 || numeric[1] < 0) && in_timing_lut == 55) {
         //     printf("x: %f, y: %f, %f %f\n from lut %d\n", x, y, numeric[0], numeric[1], in_timing_lut);
         //     // print the whole look up table
@@ -287,8 +290,7 @@ public:
         //         printf("\n");
         //     }
         // }
-        return interpolate<float>(
-            d_y_array[d_y_offset[in_timing_lut] + y_idx[0]], d_y_array[d_y_offset[in_timing_lut] + y_idx[1]], numeric[0], numeric[1], y);
+        return interpolate<float>(d_y_array[d_y_offset[in_timing_lut] + y_idx[0]], d_y_array[d_y_offset[in_timing_lut] + y_idx[1]], numeric[0], numeric[1], y);
     }
 
     __device__ __forceinline__ float query(int timing_id, int irf, int orf, float slew_or_related, float load_or_constraint, int type) {  // 0:cell/1:trans/3:constraint
@@ -308,20 +310,20 @@ public:
             return nanf("");
         }
 
-        float val1 {0.0f}, val2 {0.0f};
+        float val1{0.0f}, val2{0.0f};
 
         if (type == 0 || type == 1) {
-            switch(d_lut_template_var[in_timing_lut * 2]) {
-                case 0:                                                         // LutVar::TOTAL_OUTPUT_NET_CAPACITANCE
+            switch (d_lut_template_var[in_timing_lut * 2]) {
+                case 0:  // LutVar::TOTAL_OUTPUT_NET_CAPACITANCE
                     if (d_lut_template_var[in_timing_lut * 2 + 1] != -1) {
-                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 1);   // LutVar::INPUT_NET_TRANSITION
+                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 1);  // LutVar::INPUT_NET_TRANSITION
                     }
                     val1 = load_or_constraint;
                     val2 = slew_or_related;
                     break;
-                case 1:                                                         // LutVar::INPUT_NET_TRANSITION
+                case 1:  // LutVar::INPUT_NET_TRANSITION
                     if (d_lut_template_var[in_timing_lut * 2 + 1] != -1) {
-                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 0);   // LutVar::TOTAL_OUTPUT_NET_CAPACITANCE
+                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 0);  // LutVar::TOTAL_OUTPUT_NET_CAPACITANCE
                     }
                     val1 = slew_or_related;
                     val2 = load_or_constraint;
@@ -332,16 +334,16 @@ public:
             }
         } else if (type == 2) {
             switch (d_lut_template_var[in_timing_lut * 2]) {
-                case 2:                                                         // LutVar::CONSTRAINED_PIN_TRANSITION
+                case 2:  // LutVar::CONSTRAINED_PIN_TRANSITION
                     if (d_lut_template_var[in_timing_lut * 2 + 1] != -1) {
-                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 3);   // LutVar::RELATED_PIN_TRANSITION
+                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 3);  // LutVar::RELATED_PIN_TRANSITION
                     }
                     val1 = load_or_constraint;
                     val2 = slew_or_related;
                     break;
-                case 3:                                                         // LutVar::RELATED_PIN_TRANSITION
+                case 3:  // LutVar::RELATED_PIN_TRANSITION
                     if (d_lut_template_var[in_timing_lut * 2 + 1] != -1) {
-                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 2);   // LutVar::CONSTRAINED_PIN_TRANSITION
+                        assert(d_lut_template_var[in_timing_lut * 2 + 1] == 2);  // LutVar::CONSTRAINED_PIN_TRANSITION
                     }
                     val1 = slew_or_related;
                     val2 = load_or_constraint;
@@ -351,7 +353,6 @@ public:
                     break;
             }
         }
-
 
         // float val1 = load; // TODO: order
         // float val2 = slew;

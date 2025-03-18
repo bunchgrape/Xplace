@@ -1,6 +1,7 @@
 
 #include "GPUTimer.h"
 #include "utils.cuh"
+#include "gputimer/db/GTDatabase.h"
 
 namespace gt {
 

@@ -10,7 +10,7 @@ namespace gt {
 __global__ void explore_path_kernel(index_type* at_prefix_pin,
                                     index_type* at_prefix_arc,
                                     int* at_prefix_attr,
-                                    float* pinAt,
+                                    float* pinAT,
                                     int* arc_types,
                                     float* arcDelay,
                                     torch::PackedTensorAccessor32<int64_t, 1, torch::RestrictPtrTraits> indices,
@@ -32,7 +32,7 @@ __global__ void explore_path_kernel(index_type* at_prefix_pin,
             float at = 0;
             float delay = 0;
             if (prev_id != -1) {
-                at = pinAt[cur_id * NUM_ATTR + to_i];
+                at = pinAT[cur_id * NUM_ATTR + to_i];
                 delay = arcDelay[arc_id * 2 * NUM_ATTR + arc_i] / pow(1 + K, 2);
 
                 if (arc_types[arc_id] == 0) {
@@ -51,7 +51,7 @@ __global__ void explore_path_kernel(index_type* at_prefix_pin,
 __global__ void explore_path_deterministic_kernel(index_type* at_prefix_pin,
                                                   index_type* at_prefix_arc,
                                                   int* at_prefix_attr,
-                                                  float* pinAt,
+                                                  float* pinAT,
                                                   int* arc_types,
                                                   float* arcDelay,
                                                   torch::PackedTensorAccessor32<int64_t, 1, torch::RestrictPtrTraits> indices,
@@ -74,7 +74,7 @@ __global__ void explore_path_deterministic_kernel(index_type* at_prefix_pin,
             float at = 0;
             float delay = 0;
             if (prev_id != -1) {
-                at = pinAt[cur_id * NUM_ATTR + to_i];
+                at = pinAT[cur_id * NUM_ATTR + to_i];
                 delay = arcDelay[arc_id * 2 * NUM_ATTR + arc_i] / pow(1 + K, 2);
 
                 if (arc_types[arc_id] == 0) {
@@ -109,7 +109,7 @@ __global__ void copyToFloatAuxArray(
 std::tuple<torch::Tensor, torch::Tensor> explore_path(index_type* at_prefix_pin,
                                                       index_type* at_prefix_arc,
                                                       int* at_prefix_attr,
-                                                      float* pinAt,
+                                                      float* pinAT,
                                                       int* arc_types,
                                                       float* arcDelay,
                                                       torch::Tensor indices,
@@ -153,7 +153,7 @@ std::tuple<torch::Tensor, torch::Tensor> explore_path(index_type* at_prefix_pin,
             at_prefix_pin,
             at_prefix_arc,
             at_prefix_attr,
-            pinAt,
+            pinAT,
             arc_types,
             arcDelay,
             indices.packed_accessor32<int64_t, 1, torch::RestrictPtrTraits>(),
@@ -170,7 +170,7 @@ std::tuple<torch::Tensor, torch::Tensor> explore_path(index_type* at_prefix_pin,
         explore_path_kernel<<<numBlocks, numThreads, 0, stream>>>(at_prefix_pin,
                                                                   at_prefix_arc,
                                                                   at_prefix_attr,
-                                                                  pinAt,
+                                                                  pinAT,
                                                                   arc_types,
                                                                   arcDelay,
                                                                   indices.packed_accessor32<int64_t, 1, torch::RestrictPtrTraits>(),

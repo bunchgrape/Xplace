@@ -1,4 +1,11 @@
 #include "GPUTimer.h"
+#include "gputimer/db/GTDatabase.h"
+
+using std::ofstream;
+using std::string;
+using std::cerr;
+using std::endl;
+using std::stringstream;
 
 namespace gt {
 
@@ -35,21 +42,7 @@ void GPUTimer::read_spef(const std::string& file) {
     logger.info("spef time_unit: %.5E s", *gtdb.spef_time_unit);
     logger.info("spef capacitance_unit: %.5E F", *gtdb.spef_cap_unit);
     logger.info("spef resistance_unit: %.5E Ohm", *gtdb.spef_res_unit);
-    // std::cout << spef.standard << '\n';
-    // std::cout << spef.design_name << '\n';
-    // std::cout << spef.date << '\n';
-    // std::cout << spef.vendor << '\n';
-    // std::cout << spef.program << '\n';
-    // std::cout << spef.version << '\n';
-    // std::cout << spef.design_flow << '\n';
-    // std::cout << spef.divider << '\n';
-    // std::cout << spef.delimiter << '\n';
-    // std::cout << spef.bus_delimiter << '\n';
-    // std::cout << spef.time_unit << '\n';
-    // std::cout << spef.capacitance_unit << '\n';
-    // std::cout << spef.resistance_unit << '\n';
-    // std::cout << spef.inductance_unit << '\n';
-    // std::cout << '\n';
+
     spef.expand_name();
 }
 

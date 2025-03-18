@@ -1,22 +1,30 @@
 
 
 #pragma once
+#include <torch/extension.h>
+
+#include <memory>
+
 #include "common/common.h"
-#include "common/db/Database.h"
-#include "gputimer/base.h"
-#include "common/lib/celllib.h"
 #include "common/lib/sdc/sdc.h"
-#include "../traits.h"
+#include "gputimer/base.h"
+
+using std::set;
+using std::shared_ptr;
+using std::string;
+using std::unordered_map;
+using std::vector;
+using std::array;
 
 namespace gp {
 class GPDatabase;
 class GPPin;
 class GPNet;
-}
+};  // namespace gp
 
 namespace db {
 class Database;
-};
+};  // namespace db
 
 namespace gt {
 class CellLib;
@@ -24,91 +32,49 @@ class LibertyCell;
 class LibertyPort;
 class TimingArc;
 class Lut;
-};
+};  // namespace gt
 
 namespace gt {
 class TimingTorchRawDB;
+class STAPin;
 class clock;
-class Pin;
 class Net;
 class Arc;
 class cellpin;
 
-class Pin {
-public:
-    const gp::GPPin* gppin;
-    string name;
-    int io = -1;  // 0:i/1:o
-    vector<index_type> fanin;
-    vector<index_type> fanout;
-    set<index_type> fanin_idx;
-    set<index_type> fanout_idx;
-    int id() const;
-    Pin(string& name_, const gp::GPPin* gppin_) : name(name_), gppin(gppin_) { ; }
-};
 class Clock {
 private:
     std::string _name;
-    Pin* _source{nullptr};
-    float _period{.0f};
-    std::array<float, MAX_TRAN> _waveform;
+    float _period = .0f;
+    int _source_id;
 public:
-    Clock(const std::string& name, float period) : _name{name}, _source{nullptr}, _period{period}, _waveform{0.0f, period / 2.0f} {};
-    Clock(const std::string& name, Pin* source, float period) : _name{name}, _source{source}, _period{period}, _waveform{0.0f, period / 2.0f} {};
+    Clock(const std::string& name, float period) : _name(name), _source_id(-1), _period(period) {};
+    Clock(const std::string& name, int source_id, float period) : _name(name), _source_id(source_id), _period(period) {};
     inline const std::string& name() const;
     inline float period() const { return _period; }
-    inline float waveform(Tran rf) const { return _waveform[rf]; }
-    inline string source_name() { return _source->name; }
-    Pin* source() { return _source; }
-};
-class Net {
-public:
-    const gp::GPNet* gpnet;
-    string name;
-    Net(const gp::GPNet* gpnet_);
-};
-class Arc {
-public:
-    Pin* from;
-    Pin* to;
-    int el;
-    TimingType type;
-    string related_pin;
-    string timing_pin;
-    string lib_pin_name;
-    std::variant<Net*, array<int, 2>> Attribute;
-    Arc(Pin* from_, Pin* to_, Net* net_) : from(from_), to(to_), Attribute(net_) { ; }
-    Arc(Pin* from_, Pin* to_, array<int, 2> tv_idx_) : from(from_), to(to_), Attribute(tv_idx_) { ; }
-};
-class cellpin {
-public:
-    const CellpinView cpv;
-    std::array<vector<int>, MAX_SPLIT> timings;
-    std::array<vector<float>, MAX_SPLIT> capacitance;
-    std::array<vector<float>, MAX_SPLIT> max_transition;
-    cellpin(const CellpinView cpv_) : cpv(cpv_) {
-        capacitance[MIN].resize(3, nanf(""));
-        capacitance[MAX].resize(3, nanf(""));
-    }
-};
-class test {
-public:
-    Arc* arc;
-    test(Arc* arc_) : arc(arc_) { ; }
+    inline int source_id() { return _source_id; }
 };
 
+class STAPin {
+public:
+    vector<index_type> timing_arc_in;
+    vector<index_type> timing_arc_out;
+    set<index_type> fanin_pin_ids;
+    set<index_type> fanout_pin_ids;
+};
 
-// ======================================================================================
-// GPU Timing Database
-// 
 class GTDatabase {
 public:
     db::Database& rawdb;
     gp::GPDatabase& gpdb;
     TimingTorchRawDB& timing_raw_db;
+    std::array<std::shared_ptr<gt::CellLib>, MAX_SPLIT> cell_libs_;
+
     GTDatabase(shared_ptr<db::Database> rawdb_, shared_ptr<gp::GPDatabase> gpdb_, shared_ptr<TimingTorchRawDB> timing_raw_db_);
     ~GTDatabase() { logger.info("destruct gtdb"); }
-    void CreateNetlist();
+
+public:
+    void ExtractTimingGraph();
     void readSpef(const std::string& file);
     void readSdc(sdc::SDC& sdc);
     void _read_sdc(sdc::SetInputDelay&);
@@ -117,78 +83,71 @@ public:
     void _read_sdc(sdc::SetLoad&);
     void _read_sdc(sdc::CreateClock&);
     void _read_sdc(sdc::SetUnits&);
+    bool is_redundant_timing(const TimingArc* timing_arc, Split el);
 
-public:
     // Units
-    optional<float> sdc_res_unit;
-    optional<float> sdc_cap_unit;
-    optional<float> sdc_time_unit;
-
-    optional<float> spef_res_unit;
-    optional<float> spef_cap_unit;
-    optional<float> spef_time_unit;
-
-public:
-    // Incremental update
-    void swap_gate_type(int node_id, int bit_group, int bit_index);
-
-public:
-    // Timing Liberty
-    /// @param celllib                  Cell libraries
-    /// @param cell_views               vector of celllib views
-    /// @param cell2view                map from cell name to cell view index
-    TimingData<std::shared_ptr<gt::Celllib>, MAX_SPLIT> celllib;
-    vector<CellView> cell_views;
-    unordered_map<string, int> cell2view;
-    unordered_map<int, vector<int>> cell_gpid2arcs;
-    unordered_map<int, vector<int>> pin_id2arcs;
-
-    /// @param timings                  vector of timing data
-    /// @param pin2timing               map from pin name to cellpin timing view
-    /// @param pin_capacitance          vector of pin capacitance
-    vector<Timing*> timings;
-    unordered_map<string, cellpin*> pin2timing;
-    vector<float> pin_capacitance;
-
-
-    // Pin variables
-    /// @param pins                     vector of pin objects
-    /// @param pin_names                vector of pin names
-    /// @param pin2idx                  map from pin name to pin index
-    /// @param arcs                     vector of arc objects
-    vector<Pin*> pins;
-    vector<string> pin_names;
-    unordered_map<string, index_type> pin2idx;
-    vector<Arc*> arcs;
-
-    vector<string> net_names;
-    vector<Net*> nets;
-    vector<test> tests;
-
-    unordered_map<std::string, Clock> clocks;
-    bool is_redundant_timing(const Timing& timing, Split el, const string& cpname);
-
-public:
-    int num_pins, num_arcs, num_timings, num_fanout_pins, num_tests, num_POs;
-    vector<index_type> pin_ins, pin_outs;
-    vector<index_type> pin_frontiers;
-    void stack_pins(int idx);
-    unordered_map<string, index_type> pi2idx;
-    unordered_map<string, index_type> po2idx;
-
-    vector<int> pin_num_fanin;
-    vector<index_type> pin_fanout_list_end, pin_fanout_list;
-    vector<index_type> pin_f_arc_list_end, pin_f_arc_list;
-    vector<index_type> pin_b_arc_list_end, pin_b_arc_list;
-    vector<index_type> arc_from_pin, arc_to_pin;
-    vector<int> arc_types, arc_timings, arc_tests;
-    vector<int> test_to_arc;
-    vector<int> net_is_clock;
-
-    // timing data
     float res_unit;
     float cap_unit;
     float time_unit;
+
+    std::optional<float> sdc_res_unit;
+    std::optional<float> sdc_cap_unit;
+    std::optional<float> sdc_time_unit;
+
+    std::optional<float> spef_res_unit;
+    std::optional<float> spef_cap_unit;
+    std::optional<float> spef_time_unit;
+
+public:
+    vector<string> pin_names;
+    vector<string> net_names;
+    unordered_map<std::string, Clock> clocks;
+    unordered_map<string, index_type> primary_input2pin_id;
+    unordered_map<string, index_type> primary_output2pin_id;
+
+    vector<STAPin*> STA_pins;
+
+    vector<int> endpoints_id;
+
+    vector<int> liberty_cell_type2port_list_end = {0};
+    vector<int> liberty_port2timing_list_end = {0};
+    vector<float> liberty_port_capacitance;
+    vector<TimingArc*> liberty_timing_arcs;
+
+    vector<int> pin_id2cell_type_id;
+    vector<int> pin_id2port_offset_id;
+    vector<int> cell_node_type_map;
+    vector<float> pin_capacitance;
+
+    int num_arcs = 0;
+    int num_tests = 0;
+    int num_timings = 0;
+    int total_num_fanouts = 0;
+    int num_pins;
+    int num_POs;
+
+    vector<int> timing_arc_from_pin_id, timing_arc_to_pin_id;
+    vector<int> timing_arc_id_map;
+    vector<int> arc_types, arc_id2test_id;
+    vector<int> net_is_clock;
+
+    // Timing Graph
+    /// @param pin_frontiers                  Cell libraries
+    /// @param pin_fanout_list_end               vector of celllib views
+    /// @param pin_fanout_list                map from cell name to cell view index
+    vector<index_type> pin_ins, pin_outs;
+    vector<index_type> pin_frontiers;
+    vector<index_type> pin_fanout_list_end, pin_fanout_list;
+    vector<int> pin_num_fanin;
+
+    vector<index_type> pin_forward_arc_list_end, pin_forward_arc_list;
+    vector<index_type> pin_backward_arc_list_end, pin_backward_arc_list;
+
+    // //
+    // vector<vector<index_type>> STAPin_timing_arc_in;
+    // vector<vector<index_type>> STAPin_timing_arc_out;
+    // vector<set<index_type>> STAPin_fanin_Pin;
+    // vector<set<index_type>> STAPin_fanout_Pin;
 };
 
 class TimingTorchRawDB {
@@ -262,35 +221,35 @@ public:
     float wire_capacitance_per_micron = 0.16e-15;
     int microns = 2000;
 
-// Timer variables
-/// @param pinSlew                  Slew value on a pin
-/// @param pinLoad                  Load value on a pin
-/// @param pinRat                   Required arrival time on a pin
-/// @param pinAt                    Arrival time on a pin
-/// @param pinImpulse               Impulse value on a pin
-/// @param pinRootDelay             Root delay value on a sink pin
+    // Timer variables
+    /// @param pinSlew                  Slew value on a pin
+    /// @param pinLoad                  Load value on a pin
+    /// @param pinRAT                   Required arrival time on a pin
+    /// @param pinAT                    Arrival time on a pin
+    /// @param pinImpulse               Impulse value on a pin
+    /// @param pinRootDelay             Root delay value on a sink pin
 public:
-    // vector<float> pinSlew, pinLoad, pinRat, pinAt;
+    // vector<float> pinSlew, pinLoad, pinRAT, pinAT;
     // vector<float> pinImpulse, pinRootDelay;
     torch::Tensor pinSlew;
     torch::Tensor pinLoad;
-    torch::Tensor pinRat;
-    torch::Tensor pinAt;
+    torch::Tensor pinRAT;
+    torch::Tensor pinAT;
     torch::Tensor pinImpulse;
     torch::Tensor pinRootDelay;
 
-// Timer RC Tree variables
-/// @param endpoints_index          Index of the endpoints
-/// @param arcDelay                 Delay value of an arc
-/// @param pinImpulse_ref           Reference impulse value of a accurate Timer
-/// @param pinLoad_ref              Reference load value of a accurate Timer
-/// @param pinLoad_ratio            Load ratio value of a accurate Timer
-/// @param pinRootDelay_ref         Reference root delay value of a accurate Timer
-/// @param pinRootDelay_ratio       Root delay ratio value of a accurate Timer
-/// @param pinRootDelay_compensation Root delay compensation value compared to a accurate Timer
+    // Timer RC Tree variables
+    /// @param endpoints_id          Index of the endpoints
+    /// @param arcDelay                 Delay value of an arc
+    /// @param pinImpulse_ref           Reference impulse value of a accurate Timer
+    /// @param pinLoad_ref              Reference load value of a accurate Timer
+    /// @param pinLoad_ratio            Load ratio value of a accurate Timer
+    /// @param pinRootDelay_ref         Reference root delay value of a accurate Timer
+    /// @param pinRootDelay_ratio       Root delay ratio value of a accurate Timer
+    /// @param pinRootDelay_compensation Root delay compensation value compared to a accurate Timer
 public:
     // vector<float> arcDelay;
-    torch::Tensor endpoints_index;
+    torch::Tensor endpoints_id;
     torch::Tensor arcDelay;
     torch::Tensor pinImpulse_ref;
     torch::Tensor pinLoad_ref;
@@ -299,35 +258,35 @@ public:
     torch::Tensor pinRootDelay_ratio;
     torch::Tensor pinRootDelay_compensation;
 
-// Timer graph topology variables
-/// @param pin_f_arc_list           List of forward arcs of a pin
-/// @param pin_f_arc_list_end       Star & End index of the forward arcs lists
-/// @param pin_b_arc_list           List of backward arcs of a pin
-/// @param pin_b_arc_list_end       Star & End index of the backward arcs lists
-/// @param arc_from_pin             From pin index of an arc
-/// @param arc_to_pin               To pin index of an arc
-/// @param pin_num_fanin            Number of fanin pins of a pin
-/// @param pin_fanout_list          List of fanout pins of a pin
-/// @param pin_fanout_list_end      Star & End index of the fanout pins lists
+    // Timer graph topology variables
+    /// @param pin_forward_arc_list           List of forward arcs of a pin
+    /// @param pin_forward_arc_list_end       Star & End index of the forward arcs lists
+    /// @param pin_backward_arc_list           List of backward arcs of a pin
+    /// @param pin_backward_arc_list_end       Star & End index of the backward arcs lists
+    /// @param timing_arc_from_pin_id             From pin index of an arc
+    /// @param timing_arc_to_pin_id               To pin index of an arc
+    /// @param pin_num_fanin            Number of fanin pins of a pin
+    /// @param pin_fanout_list          List of fanout pins of a pin
+    /// @param pin_fanout_list_end      Star & End index of the fanout pins lists
 public:
-    torch::Tensor pin_f_arc_list;
-    torch::Tensor pin_f_arc_list_end;
-    torch::Tensor pin_b_arc_list;
-    torch::Tensor pin_b_arc_list_end;
-    torch::Tensor arc_from_pin;
-    torch::Tensor arc_to_pin;
+    torch::Tensor pin_forward_arc_list;
+    torch::Tensor pin_forward_arc_list_end;
+    torch::Tensor pin_backward_arc_list;
+    torch::Tensor pin_backward_arc_list_end;
+    torch::Tensor timing_arc_from_pin_id;
+    torch::Tensor timing_arc_to_pin_id;
     torch::Tensor pin_num_fanin;
     torch::Tensor pin_fanout_list;
     torch::Tensor pin_fanout_list_end;
 
-// Timer timing liberty variables
-/// @param arc_types                Types of an arc: 0/1
-/// @param arc_timings              Timing liberty index of an arc
-/// @param arc_tests                Timing test index of an arc: -1 for non-test arcs
+    // Timer timing liberty variables
+    /// @param arc_types                Types of an arc: 0/1
+    /// @param timing_arc_id_map              Timing liberty index of an arc
+    /// @param arc_id2test_id                Timing test index of an arc: -1 for non-test arcs
 public:
     torch::Tensor arc_types;
-    torch::Tensor arc_timings;
-    torch::Tensor arc_tests;
+    torch::Tensor timing_arc_id_map;
+    torch::Tensor arc_id2test_id;
 };
 
 }  // namespace gt

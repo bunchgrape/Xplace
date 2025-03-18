@@ -1,13 +1,17 @@
 #pragma once
+
+#include <torch/extension.h>
 #include "common/common.h"
 #include "common/lib/spef/parser-spef.hpp"
 #include "gputimer/base.h"
-#include "common/lib/celllib.h"
-#include "gputimer/db/GTDatabase.h"
-#include "../traits.h"
+
+using std::tuple;
+using std::vector;
+using std::shared_ptr;
 
 namespace gt {
 
+class TimingArc;
 class TimingTorchRawDB;
 class GTDatabase;
 class GPULutAllocator;
@@ -50,33 +54,30 @@ public:
     tuple<torch::Tensor, torch::Tensor> report_criticality(int K, bool verbose = false, bool deterministic = true);
     tuple<torch::Tensor, torch::Tensor> report_criticality_threshold(float thrs, bool verbose = false, bool deterministic = true);
 
-    void swap_gate_type(int idx, int bit_group, int bit_index);
-
 public:
     float time_unit() const;
 
 public:
-    int num_pins, num_arcs, num_timings, num_fanout_pins, num_tests, num_POs;
-    float *pinSlew, *pinLoad, *pinRat, *pinAt;
+    int num_pins, num_arcs, num_timings, num_tests, num_POs, total_num_fanouts;
+    float *pinSlew, *pinLoad, *pinRAT, *pinAT;
     float *pinImpulse, *pinRootDelay, *pinRootRes;
     float *arcDelay, *arcSlew;
     float *pinCap, *pinWireCap;
     float *testRelatedAT, *testConstraint, *testRAT;
 
-    float *__pinSlew__, *__pinLoad__, *__pinRat__, *__pinAt__;
+    float *__pinSlew__, *__pinLoad__, *__pinRAT__, *__pinAT__;
     float *pinImpulse_ref, *pinLoad_ref, *pinRootDelay_ref;
     float *pinLoad_ratio, *pinRootDelay_ratio;
 
     int* pin_num_fanin;
     index_type *pin_fanout_list_end, *pin_fanout_list;
-    index_type *pin_f_arc_list_end, *pin_f_arc_list;
-    index_type *pin_b_arc_list_end, *pin_b_arc_list;
-    index_type *arc_from_pin, *arc_to_pin;
-    int *arc_types, *arc_timings, *arc_tests;
+    index_type *pin_forward_arc_list_end, *pin_forward_arc_list;
+    index_type *pin_backward_arc_list_end, *pin_backward_arc_list;
+    index_type *timing_arc_from_pin_id, *timing_arc_to_pin_id;
+    int *arc_types, *timing_arc_id_map, *arc_id2test_id;
 
     index_type* pin_outs;
-    int* test_to_arc;
-    Timing* timings;
+    TimingArc* liberty_timing_arcs;
     index_type *level_list_end, *level_list;
     vector<int> level_list_end_cpu;
     int* net_is_clock;
@@ -121,8 +122,8 @@ public:
     float res_unit;
     float cap_unit;
 
-    torch::Tensor endpoints;
-    torch::Tensor slacks;
+    torch::Tensor endpoint_slacks;
+    torch::Tensor pin_slacks;
 };
 
 }  // namespace gt

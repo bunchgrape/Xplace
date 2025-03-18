@@ -1,9 +1,10 @@
 
 #include "GPUTimer.h"
+#include "common/utils/utils.h"
 #include "common/db/Database.h"
-#include "common/utils/robin_hood.h"
-// #include "flute.h"
-#include <flute.hpp>
+#include "gputimer/db/GTDatabase.h"
+#include "flute.h"
+// #include <flute.hpp>
 using namespace Flute;
 
 namespace gt {

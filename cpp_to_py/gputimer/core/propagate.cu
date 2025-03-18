@@ -13,7 +13,7 @@ __device__ void propagateSlew(index_type arc_id,
                               float *pinRootDelay,
                               float *arcDelay,
                               int arc_type,
-                              int *arc_timings,
+                              int *timing_arc_id_map,
                               GPULutAllocator *d_allocator) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const int i = idx & 0b111;
@@ -29,10 +29,10 @@ __device__ void propagateSlew(index_type arc_id,
         int tel_rf = ((i & 0b100) >> 1) + (i & 1);
         int irf = fel_rf & 1;
         int orf = tel_rf & 1;
-        if ((arc_timings[arc_id * 2 + el] == -1) || isnan(pinSlew[from_pin_id * NUM_ATTR + fel_rf])) return;
+        if ((timing_arc_id_map[arc_id * 2 + el] == -1) || isnan(pinSlew[from_pin_id * NUM_ATTR + fel_rf])) return;
         float si = pinSlew[from_pin_id * NUM_ATTR + fel_rf];
         float lc = pinLoad[to_pin_id * NUM_ATTR + tel_rf];
-        int timing_id = arc_timings[arc_id * 2 + el];
+        int timing_id = timing_arc_id_map[arc_id * 2 + el];
         float so = d_allocator->query(timing_id, irf, orf, si, lc, 1);
         if (isnan(so)) return;
         if (isnan(pinSlew[to_pin_id * NUM_ATTR + tel_rf]) || ((pinSlew[to_pin_id * NUM_ATTR + tel_rf] > so) ^ el)) {
@@ -50,7 +50,7 @@ __device__ void propagateDelay(index_type arc_id,
                                float *pinRootDelay,
                                float *arcDelay,
                                int arc_type,
-                               int *arc_timings,
+                               int *timing_arc_id_map,
                                GPULutAllocator *d_allocator) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const int i = idx & 0b111;
@@ -64,10 +64,10 @@ __device__ void propagateDelay(index_type arc_id,
         int tel_rf = ((i & 0b100) >> 1) + (i & 1);
         int irf = fel_rf & 1;
         int orf = tel_rf & 1;
-        if ((arc_timings[arc_id * 2 + el] == -1) || isnan(pinSlew[from_pin_id * NUM_ATTR + fel_rf])) return;
+        if ((timing_arc_id_map[arc_id * 2 + el] == -1) || isnan(pinSlew[from_pin_id * NUM_ATTR + fel_rf])) return;
         float si = pinSlew[from_pin_id * NUM_ATTR + fel_rf];
         float lc = pinLoad[to_pin_id * NUM_ATTR + tel_rf];
-        int timing_id = arc_timings[arc_id * 2 + el];
+        int timing_id = timing_arc_id_map[arc_id * 2 + el];
         float delay = d_allocator->query(timing_id, irf, orf, si, lc, 0);
         if (isnan(delay)) return;
         // if (delay < 0) {
@@ -109,7 +109,7 @@ __device__ void propagateTest(index_type arc_id,
                               index_type test_id,
                               index_type from_pin_id,
                               index_type to_pin_id,
-                              int *arc_timings,
+                              int *timing_arc_id_map,
                               float *pinSlew,
                               float *pinAt,
                               float *pinRat,
@@ -124,9 +124,9 @@ __device__ void propagateTest(index_type arc_id,
         const int el = i >> 1;
         const int rf = i & 1;
         const int el_rf_rf = (i << 1) + (i & 1);
-        if ((arc_timings[arc_id * 2 + el] == -1) || (isnan(pinSlew[to_pin_id * NUM_ATTR + i]))) return;
+        if ((timing_arc_id_map[arc_id * 2 + el] == -1) || (isnan(pinSlew[to_pin_id * NUM_ATTR + i]))) return;
         int fel = el ^ 1;
-        int timing_id = arc_timings[arc_id * 2 + el];
+        int timing_id = timing_arc_id_map[arc_id * 2 + el];
         int frf = d_allocator->d_is_rising_edge_triggered[timing_id] ? 0 : 1;
         if (frf && !d_allocator->d_is_falling_edge_triggered[timing_id]) {
             return;
@@ -159,11 +159,11 @@ __device__ void propagateTest(index_type arc_id,
 }
 
 __global__ void propagatePin(index_type *level_list,
-                             index_type *pin_b_arc_list_end,
-                             index_type *pin_b_arc_list,
-                             index_type *arc_from_pin,
+                             index_type *pin_backward_arc_list_end,
+                             index_type *pin_backward_arc_list,
+                             index_type *timing_arc_from_pin_id,
                              int *arc_types,
-                             int *arc_tests,
+                             int *arc_id2test_id,
                              float *pinSlew,
                              float *pinLoad,
                              float *pinImpulse,
@@ -174,7 +174,7 @@ __global__ void propagatePin(index_type *level_list,
                              float *testRAT,
                              float *testConstraint,
                              float *arcDelay,
-                             int *arc_timings,
+                             int *timing_arc_id_map,
                              index_type *at_prefix_pin,
                              index_type *at_prefix_arc,
                              index_type *at_prefix_attr,
@@ -186,16 +186,16 @@ __global__ void propagatePin(index_type *level_list,
     const int pin_idx = idx >> 3;
     if (pin_idx < num_pins_level) {
         index_type to_pin_id = level_list[level_start_offset + pin_idx];
-        for (index_type i = pin_b_arc_list_end[to_pin_id]; i < pin_b_arc_list_end[to_pin_id + 1]; i++) {
-            index_type arc_id = pin_b_arc_list[i];
-            index_type from_pin_id = arc_from_pin[arc_id];
+        for (index_type i = pin_backward_arc_list_end[to_pin_id]; i < pin_backward_arc_list_end[to_pin_id + 1]; i++) {
+            index_type arc_id = pin_backward_arc_list[i];
+            index_type from_pin_id = timing_arc_from_pin_id[arc_id];
             int arc_type = arc_types[arc_id];
-            propagateSlew(arc_id, from_pin_id, to_pin_id, pinSlew, pinLoad, pinImpulse, pinRootDelay, arcDelay, arc_type, arc_timings, d_allocator);
-            propagateDelay(arc_id, from_pin_id, to_pin_id, pinSlew, pinLoad, pinImpulse, pinRootDelay, arcDelay, arc_type, arc_timings, d_allocator);
+            propagateSlew(arc_id, from_pin_id, to_pin_id, pinSlew, pinLoad, pinImpulse, pinRootDelay, arcDelay, arc_type, timing_arc_id_map, d_allocator);
+            propagateDelay(arc_id, from_pin_id, to_pin_id, pinSlew, pinLoad, pinImpulse, pinRootDelay, arcDelay, arc_type, timing_arc_id_map, d_allocator);
             propagateAT(arc_id, from_pin_id, to_pin_id, pinAt, arcDelay, at_prefix_pin, at_prefix_arc, at_prefix_attr);
-            int test_id = arc_tests[arc_id];
+            int test_id = arc_id2test_id[arc_id];
             if (clock_period > 0 && test_id != -1) {
-                propagateTest(arc_id, test_id, from_pin_id, to_pin_id, arc_timings, pinSlew, pinAt, pinRat, testRelatedAT, testRAT, testConstraint, clock_period, d_allocator);
+                propagateTest(arc_id, test_id, from_pin_id, to_pin_id, timing_arc_id_map, pinSlew, pinAt, pinRat, testRelatedAT, testRAT, testConstraint, clock_period, d_allocator);
             }
         }
     }
@@ -208,7 +208,7 @@ __device__ void propagateRAT(index_type arc_id,
                              float *pinAt,
                              float *pinRat,
                              float *arcDelay,
-                             int *arc_timings,
+                             int *timing_arc_id_map,
                              float *from_rats,
                              GPULutAllocator *d_allocator) {
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -228,8 +228,8 @@ __device__ void propagateRAT(index_type arc_id,
         int tel_rf = ((i & 0b100) >> 1) + (i & 1);
         int irf = fel_rf & 1;
         int orf = tel_rf & 1;
-        if (arc_timings[arc_id * 2 + el] == -1) return;
-        int timing_id = arc_timings[arc_id * 2 + el];
+        if (timing_arc_id_map[arc_id * 2 + el] == -1) return;
+        int timing_id = timing_arc_id_map[arc_id * 2 + el];
         if (!d_allocator->d_is_constraint[timing_id]) {
             if (isnan(pinRat[to_pin_id * NUM_ATTR + tel_rf]) || isnan(arcDelay[arc_id * 2 * NUM_ATTR + i])) return;
             float delay = arcDelay[arc_id * 2 * NUM_ATTR + i];
@@ -261,11 +261,11 @@ __device__ void propagateRAT(index_type arc_id,
 }
 
 __global__ void propagatePinBack(index_type *level_list,
-                                 index_type *pin_f_arc_list_end,
-                                 index_type *pin_f_arc_list,
-                                 index_type *arc_to_pin,
+                                 index_type *pin_forward_arc_list_end,
+                                 index_type *pin_forward_arc_list,
+                                 index_type *timing_arc_to_pin_id,
                                  int *arc_types,
-                                 int *arc_tests,
+                                 int *arc_id2test_id,
                                  float *pinSlew,
                                  float *pinLoad,
                                  float *pinImpulse,
@@ -275,7 +275,7 @@ __global__ void propagatePinBack(index_type *level_list,
                                  float *testRelatedAT,
                                  float *testConstraint,
                                  float *arcDelay,
-                                 int *arc_timings,
+                                 int *timing_arc_id_map,
                                  index_type level_start_offset,
                                  int num_pins_level,
                                  float clock_period,
@@ -286,16 +286,16 @@ __global__ void propagatePinBack(index_type *level_list,
 
     if (pin_idx < num_pins_level) {
         index_type from_pin_id = level_list[level_start_offset + pin_idx];
-        for (index_type i = pin_f_arc_list_end[from_pin_id]; i < pin_f_arc_list_end[from_pin_id + 1]; i++) {
-            index_type arc_id = pin_f_arc_list[i];
-            index_type to_pin_id = arc_to_pin[arc_id];
+        for (index_type i = pin_forward_arc_list_end[from_pin_id]; i < pin_forward_arc_list_end[from_pin_id + 1]; i++) {
+            index_type arc_id = pin_forward_arc_list[i];
+            index_type to_pin_id = timing_arc_to_pin_id[arc_id];
             int arc_type = arc_types[arc_id];
             if ((threadIdx.x % (2 * NUM_ATTR)) == 0) {
                 for (int i = threadIdx.x; i < threadIdx.x + 2 * NUM_ATTR; i++) from_rats[i] = nanf("");
             }
             __syncthreads();
 
-            propagateRAT(arc_id, arc_type, from_pin_id, to_pin_id, pinAt, pinRat, arcDelay, arc_timings, from_rats, d_allocator);
+            propagateRAT(arc_id, arc_type, from_pin_id, to_pin_id, pinAt, pinRat, arcDelay, timing_arc_id_map, from_rats, d_allocator);
 
             __syncthreads();
             if ((threadIdx.x % (2 * NUM_ATTR)) == 0) {
@@ -307,8 +307,8 @@ __global__ void propagatePinBack(index_type *level_list,
                     int tel_rf = ((i & 0b100) >> 1) + (i & 1);
                     int irf = fel_rf & 1;
                     int orf = tel_rf & 1;
-                    // if (arc_timings[arc_id * 2 + el] == -1) continue;
-                    int timing_id = arc_timings[arc_id * 2 + el];
+                    // if (timing_arc_id_map[arc_id * 2 + el] == -1) continue;
+                    int timing_id = timing_arc_id_map[arc_id * 2 + el];
                     float rat = from_rats[ti];
                     if (!d_allocator->d_is_constraint[timing_id]) {
                         if (isnan(pinRat[from_pin_id * NUM_ATTR + fel_rf]) || ((pinRat[from_pin_id * NUM_ATTR + fel_rf] < rat) ^ el)) {
@@ -353,14 +353,14 @@ __global__ void propagatePinBack(index_type *level_list,
 
 void update_timing_cuda(index_type *level_list,
                         vector<int> level_list_end_cpu,
-                        index_type *pin_f_arc_list_end,
-                        index_type *pin_f_arc_list,
-                        index_type *arc_to_pin,
-                        index_type *pin_b_arc_list_end,
-                        index_type *pin_b_arc_list,
-                        index_type *arc_from_pin,
+                        index_type *pin_forward_arc_list_end,
+                        index_type *pin_forward_arc_list,
+                        index_type *timing_arc_to_pin_id,
+                        index_type *pin_backward_arc_list_end,
+                        index_type *pin_backward_arc_list,
+                        index_type *timing_arc_from_pin_id,
                         int *arc_types,
-                        int *arc_tests,
+                        int *arc_id2test_id,
                         float *pinSlew,
                         float *pinLoad,
                         float *pinImpulse,
@@ -371,7 +371,7 @@ void update_timing_cuda(index_type *level_list,
                         float *testRAT,
                         float *testConstraint,
                         float *arcDelay,
-                        int *arc_timings,
+                        int *timing_arc_id_map,
                         index_type *at_prefix_pin,
                         index_type *at_prefix_arc,
                         index_type *at_prefix_attr,
@@ -385,11 +385,11 @@ void update_timing_cuda(index_type *level_list,
         index_type level_start_offset = level_list_end_cpu[i];
         // printf("==== level %d ======= %d \n", i, num_pins_level);
         propagatePin<<<BLOCK_NUMBER(num_pins_level * 2 * NUM_ATTR), BLOCK_SIZE>>>(level_list,
-                                                                                  pin_b_arc_list_end,
-                                                                                  pin_b_arc_list,
-                                                                                  arc_from_pin,
+                                                                                  pin_backward_arc_list_end,
+                                                                                  pin_backward_arc_list,
+                                                                                  timing_arc_from_pin_id,
                                                                                   arc_types,
-                                                                                  arc_tests,
+                                                                                  arc_id2test_id,
                                                                                   pinSlew,
                                                                                   pinLoad,
                                                                                   pinImpulse,
@@ -400,7 +400,7 @@ void update_timing_cuda(index_type *level_list,
                                                                                   testRAT,
                                                                                   testConstraint,
                                                                                   arcDelay,
-                                                                                  arc_timings,
+                                                                                  timing_arc_id_map,
                                                                                   at_prefix_pin,
                                                                                   at_prefix_arc,
                                                                                   at_prefix_attr,
@@ -419,11 +419,11 @@ void update_timing_cuda(index_type *level_list,
         index_type level_start_offset = level_list_end_cpu[i];
         // printf("==== level %d ======= %d \n", i, num_pins_level);
         propagatePinBack<<<BLOCK_NUMBER(num_pins_level * 2 * NUM_ATTR), BLOCK_SIZE, BLOCK_SIZE * sizeof(float)>>>(level_list,
-                                                                                                                  pin_f_arc_list_end,
-                                                                                                                  pin_f_arc_list,
-                                                                                                                  arc_to_pin,
+                                                                                                                  pin_forward_arc_list_end,
+                                                                                                                  pin_forward_arc_list,
+                                                                                                                  timing_arc_to_pin_id,
                                                                                                                   arc_types,
-                                                                                                                  arc_tests,
+                                                                                                                  arc_id2test_id,
                                                                                                                   pinSlew,
                                                                                                                   pinLoad,
                                                                                                                   pinImpulse,
@@ -433,7 +433,7 @@ void update_timing_cuda(index_type *level_list,
                                                                                                                   testRelatedAT,
                                                                                                                   testConstraint,
                                                                                                                   arcDelay,
-                                                                                                                  arc_timings,
+                                                                                                                  timing_arc_id_map,
                                                                                                                   level_start_offset,
                                                                                                                   num_pins_level,
                                                                                                                   clock_period,

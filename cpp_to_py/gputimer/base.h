@@ -14,4 +14,14 @@ namespace gt {
 // using index_type = int64_t;
 using index_type = int;
 
+
+// Overloadded.
+template <typename... Ts>
+struct Functors : Ts... { 
+  using Ts::operator()... ;
+};
+
+template <typename... Ts>
+Functors(Ts...) -> Functors<Ts...>;
+
 }

@@ -1,82 +1,32 @@
 
 
 #include "GTDatabase.h"
+
+#include "common/common.h"
+#include "common/db/Cell.h"
+#include "common/db/Database.h"
+#include "common/db/Pin.h"
+#include "common/lib/Liberty.h"
+#include "common/lib/Timing.h"
+#include "common/lib/sdc/sdc.h"
 #include "io_parser/gp/GPDatabase.h"
 
 namespace gt {
 
-int Pin::id() const { return gppin->getId(); }
-
-Net::Net(const gp::GPNet* gpnet_) : gpnet(gpnet_) { name = gpnet->getName(); }
-
-void GTDatabase::swap_gate_type(int node_id, int bit_group, int bit_index) {
-    int libcell_id = rawdb.cells[gpdb.getNodes()[node_id].getOriDBId()]->ctype()->libcell();
-    int change_libcell_id = rawdb.bit_to_celltypes[bit_group][bit_index];
-    // logger.info("changing celllib %s to %s",  rawdb.celltypes[libcell_id]->name.c_str(), rawdb.celltypes[change_libcell_id]->name.c_str());
-    string change_celltype_name = rawdb.celltypes[change_libcell_id]->name;
-     
-    for (auto arc_id : cell_gpid2arcs[node_id]) {
-        int el = arcs[arc_id]->el;
-        int timing_id = arc_timings[2 * arc_id + el];
-        if (timing_id == -1) continue;
-
-        string timing_pin_name = arcs[arc_id]->timing_pin;
-        string related_pin_name = arcs[arc_id]->related_pin;
-        string lib_pin_name = arcs[arc_id]->lib_pin_name;
-        string lib_pin_name_change = change_celltype_name + ":" + timing_pin_name + "1";
-        if (pin2idx.find(lib_pin_name) == pin2idx.end()) {
-            logger.warning("timing pin %s not found", lib_pin_name.c_str());
-            continue;
-        }
-        // logger.info("changing %s to %s", lib_pin_name.c_str(), lib_pin_name_change.c_str());
-        int pin_idx = pin2idx[lib_pin_name];
-        TimingType type = arcs[arc_id]->type;
-
-        // change cellpin lib
-        auto change_pin_view = pin2timing[lib_pin_name_change];
-        auto cp = change_pin_view->cpv[el];
-        
-        // search the timing according to related pin and timing type
-        if (cp->timings_map.find(related_pin_name) == cp->timings_map.end()) {
-            logger.warning("timing %s not found", related_pin_name.c_str());
-            continue;
-        }
-        auto& pin_timings = cp->timings_map.find(related_pin_name)->second;
-
-        if (pin_timings.find(type) == pin_timings.end()) {
-            logger.warning("timing %s not found", to_string(type).c_str());
-            continue;
-        }
-        int timing_id_change = cp->timings[pin_timings.find(type)->second].gtdb_id;
-
-        arc_timings[2 * arc_id + el] = timing_id_change;
-        timing_raw_db.arc_timings[2 * arc_id + el] = timing_id_change;
-        // logger.info("el %d change timing %d to %d",el,  timing_id, timing_id_change);
-    }
-}
-
-
-bool GTDatabase::is_redundant_timing(const Timing& timing, Split el, const string& cpname) {
-    if (timing.related_pin.empty()) return true;
-    if (timing.related_pin == cpname) return true;
-    if (timing.type == TimingType::NON_SEQ_SETUP_RISING || timing.type == TimingType::NON_SEQ_SETUP_FALLING ||
-        timing.type == TimingType::NON_SEQ_HOLD_RISING || timing.type == TimingType::NON_SEQ_HOLD_FALLING)
+bool GTDatabase::is_redundant_timing(const TimingArc* timing_arc, Split el) {
+    if (timing_arc->from_port_->name == timing_arc->to_port_->name) return true;
+    if (timing_arc->related_port_name_.empty()) return true;
+    if (timing_arc->timing_type_ == TimingType::non_seq_setup_rising || timing_arc->timing_type_ == TimingType::non_seq_setup_falling || timing_arc->timing_type_ == TimingType::non_seq_hold_rising ||
+        timing_arc->timing_type_ == TimingType::non_seq_hold_falling)
         return true;
-    // if (timing.type == TimingType::CLEAR || timing.type == TimingType::COMBINATIONAL || timing.type == TimingType::COMBINATIONAL_RISE ||
-    //     timing.type == TimingType::COMBINATIONAL_FALL || timing.type == TimingType::FALLING_EDGE || timing.type == TimingType::PRESET ||
-    //     timing.type == TimingType::RISING_EDGE || timing.type == TimingType::THREE_STATE_DISABLE ||
-    //     timing.type == TimingType::THREE_STATE_DISABLE_RISE || timing.type == TimingType::THREE_STATE_DISABLE_FALL ||
-    //     timing.type == TimingType::THREE_STATE_ENABLE || timing.type == TimingType::THREE_STATE_ENABLE_RISE ||
-    //     timing.type == TimingType::THREE_STATE_ENABLE_FALL)
-    //     return true;
     switch (el) {
         case MIN:
-            if (timing.is_max_constraint()) {
+            if (timing_arc->is_max_constraint()) {
                 return true;
             }
             break;
         case MAX:
-            if (timing.is_min_constraint()) {
+            if (timing_arc->is_min_constraint()) {
                 return true;
             }
             break;
@@ -84,290 +34,205 @@ bool GTDatabase::is_redundant_timing(const Timing& timing, Split el, const strin
     return false;
 }
 
-GTDatabase::GTDatabase(shared_ptr<db::Database> rawdb_, shared_ptr<gp::GPDatabase> gpdb_, shared_ptr<TimingTorchRawDB> timing_raw_db_)
-    : rawdb(*rawdb_), gpdb(*gpdb_), timing_raw_db(*timing_raw_db_) {
-        // celllib = *(&rawdb.celllib);
-        celllib[MIN] = rawdb.celllib[MIN];
-        celllib[MAX] = rawdb.celllib[MAX];
+GTDatabase::GTDatabase(shared_ptr<db::Database> rawdb_, shared_ptr<gp::GPDatabase> gpdb_, shared_ptr<TimingTorchRawDB> timing_raw_db_) : rawdb(*rawdb_), gpdb(*gpdb_), timing_raw_db(*timing_raw_db_) {
+    cell_libs_[MIN] = rawdb.cell_libs_[MIN];
+    cell_libs_[MAX] = rawdb.cell_libs_[MAX];
 }
 
-void GTDatabase::CreateNetlist() {
-    res_unit = celllib[MIN]->resistance_unit->value();
-    cap_unit = celllib[MIN]->capacitance_unit->value();
-    time_unit = celllib[MIN]->time_unit->value();
-    pin_names = gpdb.getPinNames();
-    net_names = gpdb.getNetNames();
-    logger.info(" %.4E, %.4E, %.4E", res_unit, cap_unit, time_unit);
-
-    double elapsed = utils::tstamp.elapsed();
-    // ========================================== Create cell library ==========================================
+void GTDatabase::ExtractTimingGraph() {
+    //  Flatten Liberty Cell Timing
     //
-    //     const string& cname = dbcell->ctype()->name;
-    for (const auto& dbcelltype : rawdb.celltypes) {
-        const string& cname = dbcelltype->name;
-        if (cell2view.find(cname) != cell2view.end()) continue;
-        auto cell_min = celllib[MIN]->cell(cname);
-        auto cell_max = celllib[MAX]->cell(cname);
-        CellView cell{cell_min, cell_max};
-        if (!cell[MIN] || !cell[MAX]) {
-            // logger.warning("cell %s not found in celllib", cname.c_str());
-            continue;
-        }
-        cell_views.push_back(cell);
-        cell2view[cname] = cell_views.size() - 1;
-        for (auto& [cpname, ecpin] : cell_min->cellpins) {
-            string lib_pin_name = cname + ':' + cpname;
-            CellpinView cpv{&ecpin, cell_max->cellpin(cpname)};
-            if (!cpv[MIN] || !cpv[MAX]) {
-                logger.warning("cellpin %s mismatched in celllib", cpname.c_str());
+    for (db::CellType* cell_type : rawdb.celltypes) {
+        string cell_type_name = cell_type->name;
+        array<LibertyCell*, 2> liberty_cell_view = {cell_libs_[MIN]->get_cell(cell_type_name), cell_libs_[MAX]->get_cell(cell_type_name)};
+
+        liberty_cell_type2port_list_end.push_back(liberty_cell_type2port_list_end.back() + liberty_cell_view[MIN]->ports_.size());
+        for (int i = 0; i < liberty_cell_view[MIN]->ports_.size(); i++) {
+            array<LibertyPort*, 2> liberty_port_view = {liberty_cell_view[MIN]->ports_[i], liberty_cell_view[MAX]->ports_[i]};
+            for_each_el(el) {
+                liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[0].value_or(nanf("")));
+                liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[1].value_or(nanf("")));
+                liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[2].value_or(0.0f));
             }
-            auto cellpin_in_lib = pin2timing.try_emplace(lib_pin_name, new cellpin(cpv)).first->second;
-            FOR_EACH_EL(el) {
-                gt::Cellpin* cp = cpv[el];
-                if (cp->rise_capacitance) cellpin_in_lib->capacitance[el][0] = cp->rise_capacitance.value();
-                if (cp->fall_capacitance) cellpin_in_lib->capacitance[el][1] = cp->fall_capacitance.value();
-                cellpin_in_lib->capacitance[el][2] = cp->capacitance ? cp->capacitance.value() : 0.0f;
-                for (gt::Timing& tm : cp->timings) {
-                    timings.push_back(&tm);
-                    cellpin_in_lib->timings[el].push_back(timings.size() - 1);
-                    tm.gtdb_id = timings.size() - 1;
-                }
+            liberty_port2timing_list_end.push_back(liberty_port2timing_list_end.back() + liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_.size());
+            assert(liberty_port_view[MIN]->timing_arcs_.size() == liberty_port_view[MAX]->timing_arcs_.size());
+            for (int j = 0; j < liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_.size(); j++) {
+                liberty_timing_arcs.push_back(liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_[j]);
+                liberty_timing_arcs.push_back(liberty_port_view[MAX]->timing_arcs_non_cond_non_bundle_[j]);
             }
         }
     }
-    num_timings = timings.size();
-    num_pins = gpdb.getPins().size();
-    vector<index_type> endpoints_index;
-    elapsed = utils::tstamp.elapsed();
-    logger.info("Create cell library: %.2fs", elapsed);
 
-    // ========================================== Traverse pins ==========================================
+    //  Traverse Circuit Pins
     //
+    num_pins = gpdb.getPins().size();
+    pin_names = gpdb.getPinNames();
+    net_names = gpdb.getNetNames();
+    pin_id2cell_type_id.resize(num_pins);
+    pin_id2port_offset_id.resize(num_pins);
+    STA_pins.resize(num_pins, nullptr);
     pin_capacitance.resize(2 * 3 * num_pins, 0.0f);
     for (auto& gppin : gpdb.getPins()) {
-        string pin_name = gppin.getName();
         int pin_id = gppin.getId();
-        auto pin = pins.emplace_back(new Pin(pin_name, &gppin));
-        pin2idx[pin_name] = pin_id;
+        string pin_name = gppin.getName();
+        string pin_macro_name = gppin.getMacroName();
+        // STA_pins.emplace_back(new STAPin());
+        STA_pins[pin_id] = new STAPin();
         auto [ori_node_id, ori_node_pin_id, ori_net_id] = gppin.getOriDBInfo();
         if (ori_node_pin_id == -1) {
             auto dbiopin = rawdb.iopins[ori_node_id];
+            pin_id2cell_type_id[pin_id] = -1;
             if (dbiopin->type->direction() == 'i') {
                 pin_outs.push_back(pin_id);
-                po2idx[pin_name] = pin_id;
-                pin->io = 1;
-                endpoints_index.push_back(pin_id);
+                endpoints_id.push_back(pin_id);
+                primary_input2pin_id[pin_name] = pin_id;
             } else if (dbiopin->type->direction() == 'o') {
                 pin_ins.push_back(pin_id);
-                pi2idx[pin_name] = pin_id;
-                pin->io = 0;
+                primary_output2pin_id[pin_name] = pin_id;
             }
         } else {
             auto& dbcell = rawdb.cells[ori_node_id];
-            string cname = dbcell->ctype()->name;
-            string macro_pin_name = dbcell->ctype()->pins[ori_node_pin_id]->name();
-            string lib_pin_name = cname + ':' + macro_pin_name;
-            auto pin_lib_iter = pin2timing.find(lib_pin_name);
-            if (pin_lib_iter == pin2timing.end()) {
-                logger.warning("pin %s found in celllib", lib_pin_name.c_str());
-            }
-            auto cpv = pin_lib_iter->second->cpv;
-            FOR_EACH_EL(el) {
-                auto& cp = cpv[el];
-                pin_capacitance[pin_id * 6 + el * 2 + 0] = cp->rise_capacitance ? cp->rise_capacitance.value() : nanf("");
-                pin_capacitance[pin_id * 6 + el * 2 + 1] = cp->fall_capacitance ? cp->fall_capacitance.value() : nanf("");
-                pin_capacitance[pin_id * 6 + 4 + el] = cp->capacitance ? cp->capacitance.value() : 0.0f;
+            LibertyCell* liberty_cell = dbcell->ctype()->liberty_cell;
+            pin_id2cell_type_id[pin_id] = dbcell->ctype()->libcell();
+            pin_id2port_offset_id[pin_id] = liberty_cell->ports_map_[pin_macro_name];
+
+            int liberty_port_id = liberty_cell_type2port_list_end[pin_id2cell_type_id[pin_id]] + pin_id2port_offset_id[pin_id];
+
+            for_each_el(el) {
+                pin_capacitance[6 * pin_id + el * 2 + 0] = liberty_port_capacitance[6 * liberty_port_id + el * 3 + 0];
+                pin_capacitance[6 * pin_id + el * 2 + 1] = liberty_port_capacitance[6 * liberty_port_id + el * 3 + 1];
+                pin_capacitance[6 * pin_id + 4 + el] = liberty_port_capacitance[6 * liberty_port_id + el * 3 + 2];
             }
         }
     }
-    num_POs = pin_outs.size();
-    elapsed = utils::tstamp.elapsed();
-    logger.info("Create pins: %.2fs", elapsed);
 
-    // ========================================== Connect from-to pins ==========================================
+    //  Map Pin to Liberty Timing
     //
-    auto connect_from_to_pin = [&](string from_pin_name, string to_pin_name) -> pair<Pin*, Pin*> {
-        if (pin2idx.find(from_pin_name) == pin2idx.end() || pin2idx.find(to_pin_name) == pin2idx.end()) {
-            return {nullptr, nullptr};
-        }
-        index_type from_pin_idx = pin2idx[from_pin_name];
-        index_type to_pin_idx = pin2idx[to_pin_name];
-        auto from_pin = pins[from_pin_idx];
-        auto to_pin = pins[to_pin_idx];
-        from_pin->fanout_idx.insert(to_pin_idx);
-        to_pin->fanin_idx.insert(from_pin_idx);
-        arc_from_pin.push_back(from_pin_idx);
-        arc_to_pin.push_back(to_pin_idx);
-        from_pin->fanout.push_back(arcs.size());
-        to_pin->fanin.push_back(arcs.size());
-        // printf("connect %s %s\n", from_pin_name.c_str(), to_pin_name.c_str());
+    auto connect_from_to_pin = [&](int from_pin_id, int to_pin_id) -> pair<STAPin*, STAPin*> {
+        STAPin* from_pin = STA_pins[from_pin_id];
+        STAPin* to_pin = STA_pins[to_pin_id];
+        from_pin->fanout_pin_ids.insert(to_pin_id);
+        to_pin->fanin_pin_ids.insert(from_pin_id);
+        timing_arc_from_pin_id.push_back(from_pin_id);
+        timing_arc_to_pin_id.push_back(to_pin_id);
+        from_pin->timing_arc_out.push_back(num_arcs);
+        to_pin->timing_arc_in.push_back(num_arcs);
         return {from_pin, to_pin};
     };
 
-    // ========================================== Traverse nets ==========================================
-    //
-    // net_is_clock.resize(rawdb.nets.size(), 0);
     for (auto& gpnet : gpdb.getNets()) {
-        auto net = nets.emplace_back(new Net(&gpnet));
-        // if (gpnet.pins().size() == 0) continue;
-        string root_name = pins[gpnet.pins()[0]]->name;
-        // if (net->name == "iccad_clk") net_is_clock[nets.size() - 1] = 1;
+        int driver_pin_id = gpnet.pins()[0];
         for (index_type i = 1; i < static_cast<index_type>(gpnet.pins().size()); i++) {
-            string sink_name = pins[gpnet.pins()[i]]->name;
-            auto [from_pin, to_pin] = connect_from_to_pin(root_name, sink_name);
-            auto arc = arcs.emplace_back(new Arc(from_pin, to_pin, net));
+            int sink_pin_id = gpnet.pins()[i];
+            auto [from_pin, to_pin] = connect_from_to_pin(driver_pin_id, sink_pin_id);
+            timing_arc_id_map.push_back(-1);
+            timing_arc_id_map.push_back(-1);
             arc_types.push_back(0);
-            arc_timings.push_back(-1);
-            arc_timings.push_back(-1);
-            arc_tests.push_back(-1);
+            arc_id2test_id.push_back(-1);
+            num_arcs++;
         }
     }
-    elapsed = utils::tstamp.elapsed();
-    logger.info("Create nets: %.2fs", elapsed);
 
-    // ========================================== Traverse gates ==========================================
-    //
+    cell_node_type_map.resize(gpdb.getNodes().size(), -1);
     for (auto& dbcell : rawdb.cells) {
-        string cname = dbcell->ctype()->name;
-        if (cname == "DFFASRHQNx1_ASAP7_75t_R") {
-            bool debug = true;
-        }
-        string gname = dbcell->name();
         int gpdb_id = dbcell->gpdb_id;
-        auto cell_lib_iter = cell2view.find(cname);
-        if (cell_lib_iter == cell2view.end()) {
-            // logger.warning("cell %s not found in celllib", cname.c_str());
-            continue;
-        }
-        auto cell_lib = cell_views[cell2view.find(cname)->second];
-        FOR_EACH_EL(el) {
-            for (const auto& [cpname, cp] : cell_lib[el]->cellpins) {
-                string to_pin_name = gname + ':' + cpname;
-                string lib_pin_name = cname + ':' + cpname;
-                index_type pin_idx = pin2idx[lib_pin_name];
-                // if (cp.is_clock) continue; // FIXME: we currently do not support clock signal timing
-                for (auto& tm_idx : pin2timing[lib_pin_name]->timings[el]) {
-                    auto& tm = *timings[tm_idx];
-                    if (is_redundant_timing(tm, el, cpname)) continue;
-                    array<int, 2> tv = {-1, -1};
-                    tv[el] = tm_idx;
-                    string from_pin_name = gname + ':' + tm.related_pin;
-                    auto [from_pin, to_pin] = connect_from_to_pin(from_pin_name, to_pin_name);
-                    if (!from_pin || !to_pin) {
-                        // logger.warning("pin %s or %s not found", from_pin_name.c_str(), to_pin_name.c_str());
+        int libcell_id = dbcell->ctype()->libcell();
+        cell_node_type_map[gpdb_id] = libcell_id;
+        for_each_el(el) {
+            for (int pin_id : gpdb.getNodes()[gpdb_id].pins()) {
+                int pin_id2port_start = liberty_cell_type2port_list_end[libcell_id];
+                int pin_id2port_offset = pin_id2port_offset_id[pin_id];
+                int port_id = pin_id2port_start + pin_id2port_offset;
+                int start = liberty_port2timing_list_end[port_id];
+                int end = liberty_port2timing_list_end[port_id + 1];
+                for (int i = start; i < end; i++) {
+                    TimingArc* timing_arc = liberty_timing_arcs[2 * i + el];
+                    if (is_redundant_timing(timing_arc, el)) {
                         continue;
                     }
-                    if (to_pin_name == "_133424_:QN") {
-                        bool debug = true;
-                    } 
-                    auto arc = arcs.emplace_back(new Arc(from_pin, to_pin, tv));
+                    array<int, 2> timing_view = {-1, -1};
+                    timing_view[el] = i;
+                    int from_pin_id = gpdb_id;
+                    int to_pin_id = gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->to_port_->name);
+                    auto [from_pin, to_pin] = connect_from_to_pin(from_pin_id, to_pin_id);
+                    timing_arc_id_map.push_back(timing_view[MIN]);
+                    timing_arc_id_map.push_back(timing_view[MAX]);
                     arc_types.push_back(1);
-                    arc_timings.push_back(tv[MIN]);
-                    arc_timings.push_back(tv[MAX]);
-                    cell_gpid2arcs[gpdb_id].push_back(arcs.size() - 1);
-                    pin_id2arcs[pin_idx].push_back(arcs.size() - 1);
-                    arc->related_pin = tm.related_pin;
-                    arc->timing_pin = cpname;
-                    arc->type = *tm.type;
-                    arc->lib_pin_name = lib_pin_name;
-                    arc->el = el;
+                    num_arcs++;
 
-                    if (tm.is_constraint()) {
-                        tests.emplace_back(arc);
-                        test_to_arc.push_back(arcs.size() - 1);
-                        arc_tests.push_back(tests.size() - 1);
-                        endpoints_index.push_back(pin2idx[to_pin_name]);
+                    if (timing_arc->is_constraint()) {
+                        arc_id2test_id.push_back(num_tests++);
+                        endpoints_id.push_back(to_pin_id);
                     } else {
-                        arc_tests.push_back(-1);
+                        arc_id2test_id.push_back(-1);
                     }
                 }
             }
         }
     }
-    num_tests = tests.size();
-    elapsed = utils::tstamp.elapsed();
-    logger.info("Create gates: %.2fs", elapsed);
 
-    // ========================================== Create hyperedge list of pin connection ==========================================
+    //  Construct Connectivity Graph
     //
-    num_arcs = arcs.size();
-    num_fanout_pins = 0;
-    for (index_type i = 0; i < static_cast<index_type>(num_pins); i++) {
-        num_fanout_pins += pins[i]->fanout_idx.size();
-    }
+    for (int i = 0; i < num_pins; i++) total_num_fanouts += STA_pins[i]->fanout_pin_ids.size();
 
     pin_fanout_list_end.resize(num_pins + 1);
     pin_fanout_list_end[0] = 0;
-    pin_fanout_list.resize(num_fanout_pins);
     pin_num_fanin.resize(num_pins);
+    pin_fanout_list.resize(total_num_fanouts);
+
     index_type ptr = 0;
     index_type last_idx = 0;
-    pin_fanout_list[0] = 1;
-    // write to file
-    // auto f = fopen("netlist.txt", "w");
     for (index_type i = 0; i < static_cast<index_type>(num_pins); i++) {
-        // string& from_pin_name = pins[i]->name;
-        for (auto fanout_pin_idx : pins[i]->fanout_idx) {
-            pin_fanout_list[ptr++] = fanout_pin_idx;
-            string& to_pin_name = pins[fanout_pin_idx]->name;
-            // // printf("connect %s %s\n", from_pin_name.c_str(), to_pin_name.c_str());
-            // fprintf(f, "%s %s\n", from_pin_name.c_str(), to_pin_name.c_str());
-        }
-        last_idx += pins[i]->fanout_idx.size();
+        for (auto fanout_pin_id : STA_pins[i]->fanout_pin_ids) pin_fanout_list[ptr++] = fanout_pin_id;
+        last_idx += STA_pins[i]->fanout_pin_ids.size();
         pin_fanout_list_end[i + 1] = last_idx;
-        pin_num_fanin[i] = pins[i]->fanin_idx.size();
+        pin_num_fanin[i] = STA_pins[i]->fanin_pin_ids.size();
     }
-    // fclose(f);
     for (int i = 0; i < num_pins; i++) {
-        if (pin_num_fanin[i] == 0) {
-            pin_frontiers.push_back(i);
-        }
+        if (pin_num_fanin[i] == 0) pin_frontiers.push_back(i);
     }
 
-    // ========================================== Create hyperedge list of pin-arc connection ==========================================
-    //
-    pin_f_arc_list_end.push_back(0);
-    pin_b_arc_list_end.push_back(0);
+    pin_forward_arc_list_end.push_back(0);
+    pin_backward_arc_list_end.push_back(0);
     for (index_type i = 0; i < static_cast<index_type>(num_pins); i++) {
-        for (auto fanout_arc : pins[i]->fanout) {
-            pin_f_arc_list.push_back(fanout_arc);
+        for (auto fanout_arc : STA_pins[i]->timing_arc_out) {
+            pin_forward_arc_list.push_back(fanout_arc);
         }
-        pin_f_arc_list_end.push_back(pin_f_arc_list.size());
-        for (auto fanin_arc : pins[i]->fanin) {
-            pin_b_arc_list.push_back(fanin_arc);
+        pin_forward_arc_list_end.push_back(pin_forward_arc_list.size());
+        for (auto fanin_arc : STA_pins[i]->timing_arc_in) {
+            pin_backward_arc_list.push_back(fanin_arc);
         }
-        pin_b_arc_list_end.push_back(pin_b_arc_list.size());
+        pin_backward_arc_list_end.push_back(pin_backward_arc_list.size());
     }
 
+    // gputimer arrays
     auto device = timing_raw_db.node_size.device();
     auto options = torch::TensorOptions().dtype(torch::kInt32);
     // Timer graph topology variables
-    timing_raw_db.pin_f_arc_list = torch::from_blob(pin_f_arc_list.data(), {static_cast<index_type>(pin_f_arc_list.size())}, options).contiguous().to(device);
-    timing_raw_db.pin_f_arc_list_end = torch::from_blob(pin_f_arc_list_end.data(), {static_cast<index_type>(pin_f_arc_list_end.size())}, options).contiguous().to(device);;
-    timing_raw_db.pin_b_arc_list = torch::from_blob(pin_b_arc_list.data(), {static_cast<index_type>(pin_b_arc_list.size())}, options).contiguous().to(device);
-    timing_raw_db.pin_b_arc_list_end = torch::from_blob(pin_b_arc_list_end.data(), {static_cast<index_type>(pin_b_arc_list_end.size())}, options).contiguous().to(device);;
-    timing_raw_db.arc_from_pin = torch::from_blob(arc_from_pin.data(), {static_cast<index_type>(arc_from_pin.size())}, options).contiguous().to(device);
-    timing_raw_db.arc_to_pin = torch::from_blob(arc_to_pin.data(), {static_cast<index_type>(arc_to_pin.size())}, options).contiguous().to(device);
+    timing_raw_db.pin_forward_arc_list = torch::from_blob(pin_forward_arc_list.data(), {static_cast<index_type>(pin_forward_arc_list.size())}, options).contiguous().to(device);
+    timing_raw_db.pin_forward_arc_list_end = torch::from_blob(pin_forward_arc_list_end.data(), {static_cast<index_type>(pin_forward_arc_list_end.size())}, options).contiguous().to(device);
+    timing_raw_db.pin_backward_arc_list = torch::from_blob(pin_backward_arc_list.data(), {static_cast<index_type>(pin_backward_arc_list.size())}, options).contiguous().to(device);
+    timing_raw_db.pin_backward_arc_list_end = torch::from_blob(pin_backward_arc_list_end.data(), {static_cast<index_type>(pin_backward_arc_list_end.size())}, options).contiguous().to(device);
+    timing_raw_db.timing_arc_from_pin_id = torch::from_blob(timing_arc_from_pin_id.data(), {static_cast<index_type>(timing_arc_from_pin_id.size())}, options).contiguous().to(device);
+    timing_raw_db.timing_arc_to_pin_id = torch::from_blob(timing_arc_to_pin_id.data(), {static_cast<index_type>(timing_arc_to_pin_id.size())}, options).contiguous().to(device);
     timing_raw_db.pin_num_fanin = torch::from_blob(pin_num_fanin.data(), {static_cast<index_type>(pin_num_fanin.size())}, options).contiguous().to(device);
-    timing_raw_db.pin_fanout_list = torch::from_blob(pin_fanout_list.data(), {static_cast<index_type>(pin_fanout_list.size())}, options).contiguous().to(device);;
-    timing_raw_db.pin_fanout_list_end = torch::from_blob(pin_fanout_list_end.data(), {static_cast<index_type>(pin_fanout_list_end.size())}, options).contiguous().to(device);;
+    timing_raw_db.pin_fanout_list = torch::from_blob(pin_fanout_list.data(), {static_cast<index_type>(pin_fanout_list.size())}, options).contiguous().to(device);
+    timing_raw_db.pin_fanout_list_end = torch::from_blob(pin_fanout_list_end.data(), {static_cast<index_type>(pin_fanout_list_end.size())}, options).contiguous().to(device);
 
     // Timer timing liberty variables
     timing_raw_db.arc_types = torch::from_blob(arc_types.data(), {static_cast<int>(arc_types.size())}, options).contiguous().to(device);
-    timing_raw_db.arc_timings = torch::from_blob(arc_timings.data(), {static_cast<int>(arc_timings.size())}, options).contiguous().to(device);
-    timing_raw_db.arc_tests = torch::from_blob(arc_tests.data(), {static_cast<int>(arc_tests.size())}, options).contiguous().to(device);
-    
-    // gputimer arrays
-    timing_raw_db.endpoints_index = torch::from_blob(endpoints_index.data(), {static_cast<index_type>(endpoints_index.size())}, options).contiguous().to(device);
+    timing_raw_db.timing_arc_id_map = torch::from_blob(timing_arc_id_map.data(), {static_cast<int>(timing_arc_id_map.size())}, options).contiguous().to(device);
+    timing_raw_db.endpoints_id = torch::from_blob(endpoints_id.data(), {static_cast<index_type>(endpoints_id.size())}, options).contiguous().to(device);
+
     timing_raw_db.pinSlew = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinLoad = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
-    timing_raw_db.pinRat = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
-    timing_raw_db.pinAt = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
+    timing_raw_db.pinRAT = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
+    timing_raw_db.pinAT = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinImpulse = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinRootDelay = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     torch::fill_(timing_raw_db.pinSlew, nanf(""));
-    torch::fill_(timing_raw_db.pinRat, nanf(""));
-    torch::fill_(timing_raw_db.pinAt, nanf(""));
+    torch::fill_(timing_raw_db.pinRAT, nanf(""));
+    torch::fill_(timing_raw_db.pinAT, nanf(""));
     torch::fill_(timing_raw_db.pinImpulse, nanf(""));
     torch::fill_(timing_raw_db.pinRootDelay, nanf(""));
 
@@ -378,10 +243,6 @@ void GTDatabase::CreateNetlist() {
     timing_raw_db.pinRootDelay_ref = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinRootDelay_ratio = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinRootDelay_compensation = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
-
-    elapsed = utils::tstamp.elapsed();
-    logger.info("Create hyperedge list: %.2fs", elapsed);
-    logger.info("Design info: %d pins, %d arcs, %d tests %d timings", num_pins, num_arcs, num_tests, num_timings);
 }
 
 void GTDatabase::readSdc(sdc::SDC& sdc) {
@@ -389,16 +250,15 @@ void GTDatabase::readSdc(sdc::SDC& sdc) {
         std::visit(Functors{[this](auto&& cmd) { _read_sdc(cmd); }}, command);
     }
 
-    string clock_name = clocks.begin()->second.source_name();
+    // string clock_name = clocks.begin()->second.source_name();
+    string clock_name = gpdb.getPins()[clocks.begin()->second.source_id()].getName();
     float period = clocks.begin()->second.period();
     logger.info("clock: %s, period: %.2f\n", clock_name.c_str(), period);
 
-    net_is_clock.resize(rawdb.nets.size(), 0);
-    for (int i = 0; i < nets.size(); i++) {
-        auto& net = nets[i];
-        if (net->name == clock_name) {
-            net_is_clock[i] = 1;
-            // int clock_port_id = net->gpnet->pins()[0];
+    net_is_clock.resize(gpdb.getNets().size(), 0);
+    for (auto& gpnet : gpdb.getNets()) {
+        if (gpnet.getName() == clock_name) {
+            net_is_clock[gpnet.getId()] = 1;
         }
     }
 
@@ -408,26 +268,19 @@ void GTDatabase::readSdc(sdc::SDC& sdc) {
         if (torch::isnan(timing_raw_db.pinSlew[pi][1]).item<bool>()) timing_raw_db.pinSlew[pi][1] = 0.0f;
         if (torch::isnan(timing_raw_db.pinSlew[pi][2]).item<bool>()) timing_raw_db.pinSlew[pi][2] = 0.0f;
         if (torch::isnan(timing_raw_db.pinSlew[pi][3]).item<bool>()) timing_raw_db.pinSlew[pi][3] = 0.0f;
-        // if (torch::isnan(pinAt[pi][0]).item<bool>()) pinAt[pi][0] = 0.0f;
-        // if (torch::isnan(pinAt[pi][1]).item<bool>()) pinAt[pi][1] = period / 2.0;
-        // if (torch::isnan(pinAt[pi][2]).item<bool>()) pinAt[pi][2] = 0.0f;
-        // if (torch::isnan(pinAt[pi][3]).item<bool>()) pinAt[pi][3] = period / 2.0;
+        // if (torch::isnan(pinAT[pi][0]).item<bool>()) pinAT[pi][0] = 0.0f;
+        // if (torch::isnan(pinAT[pi][1]).item<bool>()) pinAT[pi][1] = period / 2.0;
+        // if (torch::isnan(pinAT[pi][2]).item<bool>()) pinAT[pi][2] = 0.0f;
+        // if (torch::isnan(pinAT[pi][3]).item<bool>()) pinAT[pi][3] = period / 2.0;
     }
 
-    if (clocks.begin()->second.source() != nullptr) {
-        int clock_pin_id = clocks.begin()->second.source()->id();
-        if (torch::isnan(timing_raw_db.pinAt[clock_pin_id][0]).item<bool>()) timing_raw_db.pinAt[clock_pin_id][0] = 0.0f;
-        if (torch::isnan(timing_raw_db.pinAt[clock_pin_id][1]).item<bool>()) timing_raw_db.pinAt[clock_pin_id][1] = period / 2.0;
-        if (torch::isnan(timing_raw_db.pinAt[clock_pin_id][2]).item<bool>()) timing_raw_db.pinAt[clock_pin_id][2] = 0.0f;
-        if (torch::isnan(timing_raw_db.pinAt[clock_pin_id][3]).item<bool>()) timing_raw_db.pinAt[clock_pin_id][3] = period / 2.0;
+    if (clocks.begin()->second.source_id() != -1) {
+        int clock_pin_id = clocks.begin()->second.source_id();
+        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][0]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][0] = 0.0f;
+        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][1]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][1] = period / 2.0;
+        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][2]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][2] = 0.0f;
+        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][3]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][3] = period / 2.0;
     }
-
-    // for (auto& pi : pin_ins) {
-    //     std::cout << "PI " << pins[pi]->name << " slew: min " << pinSlew[pi][0].item<float>() << ":" << pinSlew[pi][2].item<float>() << " max " <<
-    //     pinSlew[pi][1].item<float>() << ":" << pinSlew[pi][3].item<float>() << '\n'; std::cout << "PI " << pins[pi]->name << " at: min " <<
-    //     pinAt[pi][0].item<float>() << ":" << pinAt[pi][2].item<float>() << " max " << pinAt[pi][1].item<float>() << ":" <<
-    //     pinAt[pi][3].item<float>() << '\n';
-    // }
 }
 
 // Sets input delay on pins or input ports relative to a clock signal.
@@ -438,7 +291,7 @@ void GTDatabase::_read_sdc(sdc::SetUnits& obj) {
         if (s == "ns") sdc_time_unit = 1e-9;
         if (s == "us") sdc_time_unit = 1e-6;
         if (s == "ms") sdc_time_unit = 1e-3;
-        if (s == "s") sdc_time_unit = 1.0; ;
+        if (s == "s") sdc_time_unit = 1.0;
     }
     if (obj.capacitance.has_value()) {
         auto s = *obj.capacitance;
@@ -459,7 +312,6 @@ void GTDatabase::_read_sdc(sdc::SetUnits& obj) {
     if (sdc_res_unit.has_value()) printf("sdc resistance unit: %.2E\n", *sdc_res_unit);
 }
 
-
 // Sets input delay on pins or input ports relative to a clock signal.
 void GTDatabase::_read_sdc(sdc::SetInputDelay& obj) {
     assert(obj.delay_value && obj.port_pin_list);
@@ -468,21 +320,21 @@ void GTDatabase::_read_sdc(sdc::SetInputDelay& obj) {
 
     std::visit(Functors{[&](sdc::AllInputs&) {
                             for (auto& pi : pin_ins) {
-                                FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
-                                    // pinAt[pi * NUM_ATTR + (el << 1) + rf] = *obj.delay_value;
+                                for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
+                                    // pinAT[pi * NUM_ATTR + (el << 1) + rf] = *obj.delay_value;
                                     float delay = *obj.delay_value;
                                     if (sdc_time_unit.has_value()) delay = delay * *sdc_time_unit / time_unit;
-                                    timing_raw_db.pinAt[pi][(el << 1) + rf] = delay;
+                                    timing_raw_db.pinAT[pi][(el << 1) + rf] = delay;
                                 }
                             }
                         },
                         [&](sdc::GetPorts& get_ports) {
                             for (auto& port : get_ports.ports) {
-                                if (auto itr = pi2idx.find(port); itr != pi2idx.end()) {
-                                    FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                if (auto itr = primary_input2pin_id.find(port); itr != primary_input2pin_id.end()) {
+                                    for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                         float delay = *obj.delay_value;
                                         if (sdc_time_unit.has_value()) delay = delay * *sdc_time_unit / time_unit;
-                                        timing_raw_db.pinAt[itr->second][(el << 1) + rf] = delay;
+                                        timing_raw_db.pinAT[itr->second][(el << 1) + rf] = delay;
                                     }
                                 } else {
                                     printf(obj.command, ": port ", std::quoted(port), " not found");
@@ -501,7 +353,7 @@ void GTDatabase::_read_sdc(sdc::SetInputTransition& obj) {
 
     std::visit(Functors{[&](sdc::AllInputs&) {
                             for (auto& pi : pin_ins) {
-                                FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     float transition = *obj.transition;
                                     if (sdc_time_unit.has_value()) transition = transition * *sdc_time_unit / time_unit;
                                     timing_raw_db.pinSlew[pi][(el << 1) + rf] = transition;
@@ -510,8 +362,8 @@ void GTDatabase::_read_sdc(sdc::SetInputTransition& obj) {
                         },
                         [&](sdc::GetPorts& get_ports) {
                             for (auto& port : get_ports.ports) {
-                                if (auto itr = pi2idx.find(port); itr != pi2idx.end()) {
-                                    FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                if (auto itr = primary_input2pin_id.find(port); itr != primary_input2pin_id.end()) {
+                                    for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                         float transition = *obj.transition;
                                         if (sdc_time_unit.has_value()) transition = transition * *sdc_time_unit / time_unit;
                                         timing_raw_db.pinSlew[itr->second][(el << 1) + rf] = transition;
@@ -540,20 +392,20 @@ void GTDatabase::_read_sdc(sdc::SetOutputDelay& obj) {
 
     std::visit(Functors{[&](sdc::AllOutputs&) {
                             for (auto& po : pin_outs) {
-                                FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     float delay = *obj.delay_value;
                                     if (sdc_time_unit.has_value()) delay = delay * *sdc_time_unit / time_unit;
-                                    timing_raw_db.pinRat[po][(el << 1) + rf] = el == MIN ? -delay : clock.period() - delay;
+                                    timing_raw_db.pinRAT[po][(el << 1) + rf] = el == MIN ? -delay : clock.period() - delay;
                                 }
                             }
                         },
                         [&](sdc::GetPorts& get_ports) {
                             for (auto& port : get_ports.ports) {
-                                if (auto itr = po2idx.find(port); itr != po2idx.end()) {
-                                    FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                if (auto itr = primary_output2pin_id.find(port); itr != primary_output2pin_id.end()) {
+                                    for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                         float delay = *obj.delay_value;
                                         if (sdc_time_unit.has_value()) delay = delay * *sdc_time_unit / time_unit;
-                                        timing_raw_db.pinRat[itr->second][(el << 1) + rf] = el == MIN ? -delay : clock.period() - delay;
+                                        timing_raw_db.pinRAT[itr->second][(el << 1) + rf] = el == MIN ? -delay : clock.period() - delay;
                                     }
                                 } else {
                                     printf(obj.command, ": port ", std::quoted(port), " not found");
@@ -572,7 +424,7 @@ void GTDatabase::_read_sdc(sdc::SetLoad& obj) {
 
     std::visit(Functors{[&](sdc::AllOutputs&) {
                             for (auto& po : pin_outs) {
-                                FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     float load = *obj.value;
                                     if (sdc_res_unit.has_value()) load = load * *sdc_res_unit / res_unit;
                                     timing_raw_db.pinLoad[po][(el << 1) + rf] = load;
@@ -581,8 +433,8 @@ void GTDatabase::_read_sdc(sdc::SetLoad& obj) {
                         },
                         [&](sdc::GetPorts& get_ports) {
                             for (auto& port : get_ports.ports) {
-                                if (auto itr = po2idx.find(port); itr != po2idx.end()) {
-                                    FOR_EACH_EL_RF_IF(el, rf, (mask | el) && (mask | rf)) {
+                                if (auto itr = primary_output2pin_id.find(port); itr != primary_output2pin_id.end()) {
+                                    for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                         float load = *obj.value;
                                         if (sdc_res_unit.has_value()) load = load * *sdc_res_unit / res_unit;
                                         timing_raw_db.pinLoad[itr->second][(el << 1) + rf] = load;
@@ -604,8 +456,8 @@ void GTDatabase::_read_sdc(sdc::CreateClock& obj) {
         std::visit(Functors{[&](sdc::GetPorts& get_ports) {
                                 auto& ports = get_ports.ports;
                                 assert(ports.size() == 1);
-                                if (auto itr = pi2idx.find(ports.front()); itr != pi2idx.end()) {
-                                    clocks.try_emplace(obj.name, obj.name, pins[itr->second], *obj.period);
+                                if (auto itr = primary_input2pin_id.find(ports.front()); itr != primary_input2pin_id.end()) {
+                                    clocks.try_emplace(obj.name, obj.name, itr->second, *obj.period);
                                 } else {
                                     printf(obj.command, ": port ", std::quoted(ports.front()), " not found");
                                 }
@@ -653,24 +505,17 @@ TimingTorchRawDB::TimingTorchRawDB(torch::Tensor node_lpos_init_,
     num_movable_nodes = num_movable_nodes_;
     net_mask = net_mask_;
 
-    pinAt = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(node_size.device()))).contiguous();
-    pinRat =
-        torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(node_size.device()))).contiguous();
+    pinAT = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(node_size.device()))).contiguous();
+    pinRAT = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(node_size.device()))).contiguous();
     at_prefix_pin = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))).contiguous();
     at_prefix_arc = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))).contiguous();
     at_prefix_attr = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))).contiguous();
 
-    flat_node2pin_start_map =
-        torch::cat({torch::zeros({1}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))), node2pin_list_end_}, 0)
-            .to(torch::kInt32)
-            .contiguous();
+    flat_node2pin_start_map = torch::cat({torch::zeros({1}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))), node2pin_list_end_}, 0).to(torch::kInt32).contiguous();
     flat_node2pin_map = node2pin_list_.to(torch::kInt32);
     pin2node_map = pin_id2node_id_.to(torch::kInt32);
 
-    flat_net2pin_start_map =
-        torch::cat({torch::zeros({1}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))), hyperedge_list_end_}, 0)
-            .to(torch::kInt32)
-            .contiguous();
+    flat_net2pin_start_map = torch::cat({torch::zeros({1}, torch::dtype(torch::kInt32).device(torch::Device(node_size.device()))), hyperedge_list_end_}, 0).to(torch::kInt32).contiguous();
     flat_net2pin_map = hyperedge_list_.to(torch::kInt32);
     pin2net_map = pin_id2net_id_.to(torch::kInt32);
 
