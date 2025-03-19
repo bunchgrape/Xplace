@@ -4,6 +4,8 @@
 
 #include "Liberty.h"
 #include "Timing.h"
+#include "common/db/Cell.h"
+#include "common/db/Database.h"
 #include "lut.h"
 
 using std::ifstream;
@@ -299,7 +301,6 @@ LibertyPort* CellLib::extractLibertyPort(token_iterator& itr, const token_iterat
         logger.info("can't find group brace '}' in cell port");
     }
 
-    liberty_cell->ports_map_[cell_port->name] = cell_port;
     return cell_port;
 }
 
@@ -337,9 +338,11 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
             logger.infoif(++itr == end, "can't get port in cell ", liberty_cell->name);
             LibertyPort* cell_port_ = extractLibertyPort(itr, end, liberty_cell);
             liberty_cell->ports_.push_back(cell_port_);
+            liberty_cell->ports_map_[cell_port_->name] = liberty_cell->ports_.size() - 1;
         } else if (*itr == "bundle") {
             LibertyPort* cell_port_bundle = new LibertyPort();
             liberty_cell->ports_.push_back(cell_port_bundle);
+            liberty_cell->ports_map_[cell_port_bundle->name] = liberty_cell->ports_.size() - 1;
             cell_port_bundle->cell_ = liberty_cell;
             cell_port_bundle->is_bundle_ = true;
 
@@ -498,13 +501,13 @@ void CellLib::finish_port_read(LibertyPort* liberty_port) {
             continue;
         }
         if (auto related_port = liberty_port->cell_->get_port(timing_arc->related_port_name_);
-            related_port == nullptr) {
+            related_port == -1) {
             logger.warning("timing arc %s.%s.%s has no related pin",
                            liberty_port->cell_->name.c_str(),
                            liberty_port->name.c_str(),
                            timing_arc->timing_type_);
         } else {
-            timing_arc->from_port_ = related_port;
+            timing_arc->from_port_ = liberty_port->cell_->ports_[related_port];;
         }
         timing_arc->to_port_ = timing_arc->liberty_port_;
     }
@@ -523,6 +526,14 @@ void CellLib::finish_port_read(LibertyPort* liberty_port) {
 
 void CellLib::finish_read() {
     for (auto [name, liberty_cell] : lib_cells_) {
+        db::CellType* lef_cell_type = rawdb->getCellType(name);
+        if (lef_cell_type == nullptr) {
+            logger.warning("cell %s not found in lef", name.c_str());
+            continue;
+        } else {
+            lef_cell_type->liberty_cell = liberty_cell;
+            liberty_cell->cell_type_ = lef_cell_type;
+        }
         // sort port by name
         std::sort(liberty_cell->ports_.begin(),
                   liberty_cell->ports_.end(),
@@ -539,20 +550,20 @@ void CellLib::finish_read() {
         }
 
         // if (liberty_cell->is_seq_) {
-            for (auto port : liberty_cell->ports_) {
-                LibertyPort* non_bundle_port;
-                if (port->is_bundle_) {
-                    non_bundle_port = port->member_ports_[0];
-                } else
-                    non_bundle_port = port;
-                // std::cout << "cell: " << liberty_cell->name << " port: " << port->name << std::endl;
-                for (auto kvp : non_bundle_port->timing_arcs_map_) {
-                    // string encode_str = kvp.first;
-                    // std::cout << encode_str << std::endl;
-                    TimingArc* timing_arc = kvp.second;
-                    port->timing_arcs_non_cond_non_bundle_.push_back(timing_arc);
-                }
+        for (auto port : liberty_cell->ports_) {
+            LibertyPort* non_bundle_port;
+            if (port->is_bundle_) {
+                non_bundle_port = port->member_ports_[0];
+            } else
+                non_bundle_port = port;
+            // std::cout << "cell: " << liberty_cell->name << " port: " << port->name << std::endl;
+            for (auto kvp : non_bundle_port->timing_arcs_map_) {
+                // string encode_str = kvp.first;
+                // std::cout << encode_str << std::endl;
+                TimingArc* timing_arc = kvp.second;
+                port->timing_arcs_non_cond_non_bundle_.push_back(timing_arc);
             }
+        }
         // }
     }
 }

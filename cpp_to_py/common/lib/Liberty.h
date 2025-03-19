@@ -7,8 +7,8 @@
 #include <variant>
 #include <vector>
 
-#include "Helper.h"
 #include "EnumNameMap.h"
+#include "Helper.h"
 #include "tokenizer.h"
 #include "unit.h"
 
@@ -20,7 +20,8 @@ using std::vector;
 
 namespace db {
 class Database;
-};
+class CellType;
+};  // namespace db
 
 namespace gt {
 
@@ -33,11 +34,10 @@ class Lut;
 
 // using CellView = std::array<const Cell *, MAX_SPLIT>;
 // using CellpinView = std::array<Cellpin *, MAX_SPLIT>;
-enum class DelayModel { generic_cmos, table_lookup, cmos2, piecewise_cmos, dcm, polynomial, unknown};
-enum class CellPortDirection { input, output, inout, internal, unknown};
+enum class DelayModel { generic_cmos, table_lookup, cmos2, piecewise_cmos, dcm, polynomial, unknown };
+enum class CellPortDirection { input, output, inout, internal, unknown };
 DelayModel findDelayModel(const std::string model_name);
 CellPortDirection findPortDirection(const std::string dir_name);
-
 
 class CellLib {
 public:
@@ -45,6 +45,7 @@ public:
     CellLib() = default;
     CellLib(db::Database *rawdb_) : rawdb(rawdb_) {}
     db::Database *rawdb = nullptr;
+    db::CellType *cell_type_ = nullptr;
 
     using token_iterator = std::vector<std::string_view>::iterator;
     DelayModel delay_model;
@@ -81,10 +82,10 @@ public:
     unordered_map<string, LibertyCell *> lib_cells_;
 
     LutTemplate *get_lut_template(const string &);
-    LibertyCell* get_cell(const std::string& name);
+    LibertyCell *get_cell(const std::string &name);
     void read(const string &file);
     void finish_read();
-    void finish_port_read(LibertyPort* liberty_port);
+    void finish_port_read(LibertyPort *liberty_port);
 
 public:
     LibertyCell *extractLibertyCell(token_iterator &, const token_iterator);
@@ -103,8 +104,10 @@ class LibertyCell {
 public:
     LibertyCell() = default;
     string name;
+    db:: CellType *cell_type_ = nullptr;
     vector<LibertyPort *> ports_;
-    map<string, LibertyPort *> ports_map_;
+    // map<string, LibertyPort *> ports_map_;
+    map<string, int> ports_map_;
 
     vector<float> leakage_powers_;
     optional<float> leakage_power_;
@@ -114,7 +117,7 @@ public:
     int num_bits_ = 0;
 
 public:
-    LibertyPort* get_port(const std::string& name);
+    int get_port(const std::string &name);
 };
 
 class LibertyPort {
@@ -134,6 +137,9 @@ public:
     vector<TimingArc *> timing_arcs_;
     map<string, TimingArc *> timing_arcs_map_;
     vector<TimingArc *> timing_arcs_non_cond_non_bundle_;
+
+
+
 
     // optional<float> capacitance;
     // optional<float> fall_capacitance;

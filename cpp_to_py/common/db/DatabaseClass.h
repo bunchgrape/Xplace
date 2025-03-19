@@ -4,6 +4,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <array>
 
 #include "common/utils/utils.h"
 
@@ -14,6 +15,7 @@ namespace db {
 
 using std::string;
 using std::vector;
+using std::array;
 
 class Database;
 class Rectangle;
@@ -42,4 +44,11 @@ class PowerNet;
 class EdgeTypes;
 class GCellGrid;
 class BsRouteInfo;
+class VerilogParser;
 }  // namespace db
+
+namespace gt {
+class CellLib;
+class LibertyCell;
+class LibertyPort;
+}

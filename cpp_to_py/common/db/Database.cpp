@@ -15,8 +15,23 @@
 #include "Site.h"
 #include "SiteMap.h"
 #include "Via.h"
+#include "common/lib/Liberty.h"
 
 using namespace db;
+
+string validate_token(string& name) {
+    // remove '\'
+    string::size_type pos = 0;
+    while ((pos = name.find('\\', pos)) != string::npos) {
+        name.erase(pos, 1);
+    }
+    // remove ' '
+    pos = 0;
+    while ((pos = name.find(' ', pos)) != string::npos) {
+        name.erase(pos, 1);
+    }
+    return name;
+}
 
 /***** Database *****/
 Database::Database() {
@@ -49,24 +64,64 @@ void Database::load() {
     if (setting.LefFile != "") {
         setting.Format = "lefdef";
         readLEF(setting.LefFile);
+        lef_read = true;
     } else if ((setting.LefCell != "") && (setting.LefTech != "")) {
         setting.Format = "lefdef";
         readLEF(setting.LefTech);
         readLEF(setting.LefCell);
+        lef_read = true;
     } else if (setting.LefFiles.size() > 0) {
         setting.Format = "lefdef";
         for (auto lef : setting.LefFiles) {
             readLEF(lef);
         }
+        lef_read = true;
     }
+
+    if (setting.CellLib != "") {
+        auto lib_min = std::make_shared<gt::CellLib>();
+        auto lib_max = std::make_shared<gt::CellLib>();
+        if (lef_read) {
+            lib_min->rawdb = this;
+            lib_max->rawdb = this;
+        }
+        lib_min->read(setting.CellLib);
+        lib_max->read(setting.CellLib);
+        cell_libs_[gt::MIN] = lib_min;
+        cell_libs_[gt::MAX] = lib_max;
+        liberty_read = true;
+    } else if (setting.CellLib_MIN != "" && setting.CellLib_MAX != "") {
+        auto lib_min = std::make_shared<gt::CellLib>();
+        auto lib_max = std::make_shared<gt::CellLib>();
+        if (lef_read) {
+            lib_min->rawdb = this;
+            lib_max->rawdb = this;
+        }
+        if (setting.CellLib_MIN != "") lib_min->read(setting.CellLib_MIN);
+        if (setting.CellLib_MAX != "") lib_max->read(setting.CellLib_MAX);
+        cell_libs_[gt::MIN] = lib_min;
+        cell_libs_[gt::MAX] = lib_max;
+        liberty_read = true;
+    }  else if (setting.LibFiles.size() > 0) {
+        auto lib = std::make_shared<gt::CellLib>();
+        if (lef_read) lib->rawdb = this;
+        for (auto libfile : setting.LibFiles) {
+            lib->read(libfile);
+        }
+        cell_libs_[gt::MIN] = lib;
+        cell_libs_[gt::MAX] = cell_libs_[gt::MIN];
+        liberty_read = true;
+    }
+
 
     if (setting.DefFile != "") {
         setting.Format = "lefdef";
         readDEF(setting.DefFile);
         readDEFPG(setting.DefFile);
+        def_read = true;
     }
 
-    if (setting.Size != "") {
+        if (setting.Size != "") {
         readSize(setting.Size);
     }
 
@@ -74,10 +129,10 @@ void Database::load() {
         readConstraints(setting.Constraints);
     }
 
+    // verilog is unused now
     if (setting.Verilog != "") {
-        readVerilog(setting.Verilog);
+        readVerilog_yy(setting.Verilog);
     }
-
     logger.info("Finish loading rawdb");
 }
 

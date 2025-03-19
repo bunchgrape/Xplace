@@ -4,6 +4,10 @@
 #include <vector>
 #include "Geometry.h"
 
+namespace gt {
+class LibertyCell;
+}
+
 namespace db {
 
 using std::string;
@@ -87,6 +91,8 @@ public:
 
     bool operator==(const CellType& r) const;
     bool operator!=(const CellType& r) const { return !(*this == r); }
+
+    gt::LibertyCell* liberty_cell = nullptr;
 };
 
 class Cell {

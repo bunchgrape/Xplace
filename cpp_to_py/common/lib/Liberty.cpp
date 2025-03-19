@@ -85,9 +85,9 @@ LibertyCell* CellLib::get_cell(const std::string& name) {
     }
 }
 
-LibertyPort* LibertyCell::get_port(const std::string& name) {
+int LibertyCell::get_port(const std::string& name) {
     if (auto itr = ports_map_.find(name); itr == ports_map_.end()) {
-        return nullptr;
+        return -1;
     } else {
         return itr->second;
     }

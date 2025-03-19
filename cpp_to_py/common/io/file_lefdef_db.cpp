@@ -1549,7 +1549,10 @@ int readDefComponentStart(defrCallbackType_e c, int num, defiUserData ud) {
 int readDefComponent(defrCallbackType_e c, defiComponent* co, defiUserData ud) {
     Database* db = (Database*)ud;
     CellType* celltype = db->getCellType(co->name());
-    Cell* cell = db->addCell(co->id(), celltype);
+
+    string cellName(co->id());
+    cellName = validate_token(cellName);
+    Cell* cell = db->addCell(cellName, celltype);
 
     if (co->isUnplaced()) {
         cell->fixed(false);
