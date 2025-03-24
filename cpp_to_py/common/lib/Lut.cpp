@@ -1,4 +1,4 @@
-#include "lut.h"
+#include "Lut.h"
 
 namespace gt {
 

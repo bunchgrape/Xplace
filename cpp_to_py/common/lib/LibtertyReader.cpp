@@ -6,7 +6,7 @@
 #include "Timing.h"
 #include "common/db/Cell.h"
 #include "common/db/Database.h"
-#include "lut.h"
+#include "Lut.h"
 
 using std::ifstream;
 
@@ -338,11 +338,11 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
             logger.infoif(++itr == end, "can't get port in cell ", liberty_cell->name);
             LibertyPort* cell_port_ = extractLibertyPort(itr, end, liberty_cell);
             liberty_cell->ports_.push_back(cell_port_);
-            liberty_cell->ports_map_[cell_port_->name] = liberty_cell->ports_.size() - 1;
+            // liberty_cell->ports_map_[cell_port_->name] = liberty_cell->ports_.size() - 1;
         } else if (*itr == "bundle") {
             LibertyPort* cell_port_bundle = new LibertyPort();
             liberty_cell->ports_.push_back(cell_port_bundle);
-            liberty_cell->ports_map_[cell_port_bundle->name] = liberty_cell->ports_.size() - 1;
+            // liberty_cell->ports_map_[cell_port_bundle->name] = liberty_cell->ports_.size() - 1;
             cell_port_bundle->cell_ = liberty_cell;
             cell_port_bundle->is_bundle_ = true;
 
@@ -487,8 +487,6 @@ void CellLib::read(const std::string& file) {
     }
 
     // apply_default_values();
-
-    finish_read();
 }
 
 void CellLib::finish_port_read(LibertyPort* liberty_port) {
@@ -525,7 +523,12 @@ void CellLib::finish_port_read(LibertyPort* liberty_port) {
 }
 
 void CellLib::finish_read() {
+    std::cout << lib_cells_.size() << std::endl;
     for (auto [name, liberty_cell] : lib_cells_) {
+        printf("cell: %s\n", name.c_str());
+        if (name == "DFFHQNx1_ASAP7_75t_R") {
+            bool debug = true;
+        }
         db::CellType* lef_cell_type = rawdb->getCellType(name);
         if (lef_cell_type == nullptr) {
             logger.warning("cell %s not found in lef", name.c_str());
@@ -538,6 +541,10 @@ void CellLib::finish_read() {
         std::sort(liberty_cell->ports_.begin(),
                   liberty_cell->ports_.end(),
                   [](const LibertyPort* a, const LibertyPort* b) { return a->name < b->name; });
+        
+        for (int i = 0; i < liberty_cell->ports_.size(); i++) {
+            liberty_cell->ports_map_[liberty_cell->ports_[i]->name] = i;
+        }
 
         for (auto port : liberty_cell->ports_) {
             if (port->is_clock_) liberty_cell->is_seq_ = true;
@@ -563,6 +570,10 @@ void CellLib::finish_read() {
                 TimingArc* timing_arc = kvp.second;
                 port->timing_arcs_non_cond_non_bundle_.push_back(timing_arc);
             }
+        }
+
+        if (name == "DFFLQNx2_ASAP7_75t_R") {
+            bool debug = true;
         }
         // }
     }

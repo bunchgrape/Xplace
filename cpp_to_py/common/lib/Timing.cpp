@@ -1,8 +1,16 @@
 #include "Timing.h"
-
+#include "Lut.h"
 #include "Liberty.h"
 
 namespace gt {
+
+TimingArc::TimingArc() {
+    for (int i = 0; i < MAX_TRAN; i++) {
+        cell_delay_[i] = new Lut();
+        transition_[i] = new Lut();
+        constraint_[i] = new Lut();
+    }
+}
 
 bool TimingArc::is_constraint() const {
     switch (timing_type_) {

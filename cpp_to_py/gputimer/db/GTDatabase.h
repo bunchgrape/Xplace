@@ -46,7 +46,7 @@ class Clock {
 private:
     std::string _name;
     float _period = .0f;
-    int _source_id;
+    int _source_id = -1;
 public:
     Clock(const std::string& name, float period) : _name(name), _source_id(-1), _period(period) {};
     Clock(const std::string& name, int source_id, float period) : _name(name), _source_id(source_id), _period(period) {};

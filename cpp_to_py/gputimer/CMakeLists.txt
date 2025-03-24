@@ -26,7 +26,7 @@ pybind11_add_module(gputimer MODULE PyBindCppMain.cpp)
 target_include_directories(gputimer PRIVATE ${TORCH_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/cpp_to_py ${FLUTE_INCLUDE_DIR})
 target_link_libraries(gputimer PRIVATE torch ${TORCH_PYTHON_LIBRARY} xplace_common flute io_parser gt)
 target_compile_definitions(gputimer PRIVATE 
-                            TORCH_EXTENSION_NAME=gpugr
+                            TORCH_EXTENSION_NAME=gputimer
                             TORCH_VERSION_MAJOR=${TORCH_VERSION_MAJOR}
                             TORCH_VERSION_MINOR=${TORCH_VERSION_MINOR}
                             ENABLE_CUDA=${TORCH_ENABLE_CUDA})

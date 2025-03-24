@@ -60,7 +60,8 @@ TimingType findTimingType(const std::string type_name);
 
 class TimingArc {
 public:
-    TimingArc() = default;
+    TimingArc();
+    
     // TimingArc(TimingArcSet* set, LibertyPort* from, LibertyPort* to, Tran irf, Tran orf);
     int id = -1;
     string encode_str_;
@@ -69,7 +70,7 @@ public:
     LibertyPort* liberty_port_;
 
     TimingType timing_type_;
-    TimingSense timing_sense_;
+    TimingSense timing_sense_ = TimingSense::unknown;
 
     string related_port_name_;
     LibertyPort* from_port_;

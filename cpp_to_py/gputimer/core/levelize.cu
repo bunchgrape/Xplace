@@ -76,7 +76,7 @@ void GPUTimer::levelize() {
     index_type *level_list_cpu = new index_type[total_num_frontiers];
     cudaMemcpy(level_list_cpu, level_list, total_num_frontiers * sizeof(index_type), cudaMemcpyDeviceToHost);
 
-    // checkTimingGraph(level_list_cpu, num_pins, gtdb.pin_names);
+    checkTimingGraph(level_list_cpu, num_pins, gtdb.pin_names);
 }
 
 } // namespace gt

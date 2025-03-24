@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include "common/lib/lut.h"
+#include "common/lib/Lut.h"
 #include "common/lib/Timing.h"
 
 using std::vector;
@@ -68,6 +68,7 @@ public:
     GPULutAllocator() = default;
     __host__ __forceinline__ void AllocateBatch(vector<TimingArc *> timings) {
         auto check_lut = [&](Lut *lut) {
+            if (!lut) return;
             if (lut->set_) {
                 x_size += lut->indices1.size();
                 y_size += lut->indices2.size();

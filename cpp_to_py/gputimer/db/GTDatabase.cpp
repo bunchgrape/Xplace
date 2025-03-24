@@ -40,15 +40,33 @@ GTDatabase::GTDatabase(shared_ptr<db::Database> rawdb_, shared_ptr<gp::GPDatabas
 }
 
 void GTDatabase::ExtractTimingGraph() {
+    res_unit = cell_libs_[MIN]->resistance_unit_->value();
+    cap_unit = cell_libs_[MIN]->capacitance_unit_->value();
+    time_unit = cell_libs_[MIN]->time_unit_->value();
+    pin_names = gpdb.getPinNames();
+    net_names = gpdb.getNetNames();
+    
     //  Flatten Liberty Cell Timing
     //
+    // write to tmp.log
+    std::ofstream ofs("tmp.log");
     for (db::CellType* cell_type : rawdb.celltypes) {
         string cell_type_name = cell_type->name;
+        ofs << "Macro " << cell_type_name << std::endl;
         array<LibertyCell*, 2> liberty_cell_view = {cell_libs_[MIN]->get_cell(cell_type_name), cell_libs_[MAX]->get_cell(cell_type_name)};
+        if (!liberty_cell_view[MIN] || !liberty_cell_view[MAX]) {
+            liberty_cell_type2port_list_end.push_back(liberty_cell_type2port_list_end.back());
+            continue;
+        }
+
+        if (cell_type_name == "OAI21x1_ASAP7_75t_R") {
+            bool debug = true;
+        }     
 
         liberty_cell_type2port_list_end.push_back(liberty_cell_type2port_list_end.back() + liberty_cell_view[MIN]->ports_.size());
         for (int i = 0; i < liberty_cell_view[MIN]->ports_.size(); i++) {
             array<LibertyPort*, 2> liberty_port_view = {liberty_cell_view[MIN]->ports_[i], liberty_cell_view[MAX]->ports_[i]};
+            ofs << "  Port " << liberty_cell_view[MIN]->ports_[i]->name << " " << liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_.size() << std::endl;
             for_each_el(el) {
                 liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[0].value_or(nanf("")));
                 liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[1].value_or(nanf("")));
@@ -62,6 +80,7 @@ void GTDatabase::ExtractTimingGraph() {
             }
         }
     }
+    ofs.close();
 
     //  Traverse Circuit Pins
     //
@@ -76,7 +95,6 @@ void GTDatabase::ExtractTimingGraph() {
         int pin_id = gppin.getId();
         string pin_name = gppin.getName();
         string pin_macro_name = gppin.getMacroName();
-        // STA_pins.emplace_back(new STAPin());
         STA_pins[pin_id] = new STAPin();
         auto [ori_node_id, ori_node_pin_id, ori_net_id] = gppin.getOriDBInfo();
         if (ori_node_pin_id == -1) {
@@ -85,10 +103,10 @@ void GTDatabase::ExtractTimingGraph() {
             if (dbiopin->type->direction() == 'i') {
                 pin_outs.push_back(pin_id);
                 endpoints_id.push_back(pin_id);
-                primary_input2pin_id[pin_name] = pin_id;
+                primary_output2pin_id[pin_name] = pin_id;
             } else if (dbiopin->type->direction() == 'o') {
                 pin_ins.push_back(pin_id);
-                primary_output2pin_id[pin_name] = pin_id;
+                primary_input2pin_id[pin_name] = pin_id;
             }
         } else {
             auto& dbcell = rawdb.cells[ori_node_id];
@@ -138,6 +156,12 @@ void GTDatabase::ExtractTimingGraph() {
         int gpdb_id = dbcell->gpdb_id;
         int libcell_id = dbcell->ctype()->libcell();
         cell_node_type_map[gpdb_id] = libcell_id;
+        if (dbcell->name() == "_16845_") {
+            // for (auto& kvp : gpdb.getNodes()[gpdb_id].portMap) {
+            //     printf("%s %d\n", kvp.first.c_str(), kvp.second);
+            // }
+            bool debug = true;
+        }
         for_each_el(el) {
             for (int pin_id : gpdb.getNodes()[gpdb_id].pins()) {
                 int pin_id2port_start = liberty_cell_type2port_list_end[libcell_id];
@@ -151,8 +175,13 @@ void GTDatabase::ExtractTimingGraph() {
                         continue;
                     }
                     array<int, 2> timing_view = {-1, -1};
-                    timing_view[el] = i;
-                    int from_pin_id = gpdb_id;
+                    timing_view[el] = 2 * i + el;
+                    // if (dbcell->name() == "_16845_") {
+                    //     printf("%s from %d \n", timing_arc->from_port_->name.c_str(), gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->from_port_->name));
+                    //     printf("%s to %d \n", timing_arc->to_port_->name.c_str(), gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->to_port_->name));
+                    //     bool debug = true;
+                    // }
+                    int from_pin_id = gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->from_port_->name);;
                     int to_pin_id = gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->to_port_->name);
                     auto [from_pin, to_pin] = connect_from_to_pin(from_pin_id, to_pin_id);
                     timing_arc_id_map.push_back(timing_view[MIN]);
@@ -222,6 +251,7 @@ void GTDatabase::ExtractTimingGraph() {
     // Timer timing liberty variables
     timing_raw_db.arc_types = torch::from_blob(arc_types.data(), {static_cast<int>(arc_types.size())}, options).contiguous().to(device);
     timing_raw_db.timing_arc_id_map = torch::from_blob(timing_arc_id_map.data(), {static_cast<int>(timing_arc_id_map.size())}, options).contiguous().to(device);
+    timing_raw_db.arc_id2test_id = torch::from_blob(arc_id2test_id.data(), {static_cast<int>(arc_id2test_id.size())}, options).contiguous().to(device);
     timing_raw_db.endpoints_id = torch::from_blob(endpoints_id.data(), {static_cast<index_type>(endpoints_id.size())}, options).contiguous().to(device);
 
     timing_raw_db.pinSlew = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();

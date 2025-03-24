@@ -10,6 +10,7 @@ __all__ = [
     "gpugr",
     "gpudp",
     "routedp",
+    "gputimer",
 ]
 from .cpybin import (
     dct_cuda,
@@ -22,5 +23,6 @@ from .cpybin import (
     gpugr,
     gpudp,
     routedp,
+    gputimer,
 )
 
