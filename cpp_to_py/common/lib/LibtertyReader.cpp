@@ -525,7 +525,6 @@ void CellLib::finish_port_read(LibertyPort* liberty_port) {
 void CellLib::finish_read() {
     std::cout << lib_cells_.size() << std::endl;
     for (auto [name, liberty_cell] : lib_cells_) {
-        printf("cell: %s\n", name.c_str());
         if (name == "DFFHQNx1_ASAP7_75t_R") {
             bool debug = true;
         }

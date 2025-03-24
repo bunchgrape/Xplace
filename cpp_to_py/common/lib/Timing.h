@@ -69,7 +69,7 @@ public:
     LibertyCell* cell_;
     LibertyPort* liberty_port_;
 
-    TimingType timing_type_;
+    TimingType timing_type_ = TimingType::unknown;
     TimingSense timing_sense_ = TimingSense::unknown;
 
     string related_port_name_;

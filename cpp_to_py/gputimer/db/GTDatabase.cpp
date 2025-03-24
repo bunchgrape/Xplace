@@ -273,6 +273,8 @@ void GTDatabase::ExtractTimingGraph() {
     timing_raw_db.pinRootDelay_ref = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinRootDelay_ratio = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
     timing_raw_db.pinRootDelay_compensation = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
+
+    logger.info("Design info: %d pins, %d arcs, %d tests", num_pins, num_arcs, num_tests);
 }
 
 void GTDatabase::readSdc(sdc::SDC& sdc) {

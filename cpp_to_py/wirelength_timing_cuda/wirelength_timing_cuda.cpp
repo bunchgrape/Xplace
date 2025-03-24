@@ -49,4 +49,4 @@ std::vector<torch::Tensor> wa_wirelength_timing_weight(torch::Tensor node_pos,
         node_pos, timing_pin_grad, pin_id2node_id, pin_rel_cpos, node2pin_list, node2pin_list_end, hyperedge_list, hyperedge_list_end, net_mask, net_weight, hpwl_scale, gamma, deterministic);
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("merged_wl_loss_grad_with_timing", &wa_wirelength_timing_weight, "calculate timing-driven WA wirelength pin grad"); }
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("merged_wl_loss_grad_timing", &wa_wirelength_timing_weight, "calculate timing-driven WA wirelength pin grad"); }
