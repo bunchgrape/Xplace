@@ -79,16 +79,14 @@ void Database::load() {
     }
 
     if (setting.CellLib != "") {
-        auto lib_min = std::make_shared<gt::CellLib>();
-        auto lib_max = std::make_shared<gt::CellLib>();
+        auto lib = std::make_shared<gt::CellLib>();
         if (lef_read) {
-            lib_min->rawdb = this;
-            lib_max->rawdb = this;
+            lib->rawdb = this;
         }
-        lib_min->read(setting.CellLib);
-        lib_max->read(setting.CellLib);
-        cell_libs_[gt::MIN] = lib_min;
-        cell_libs_[gt::MAX] = lib_max;
+        lib->read(setting.CellLib);
+        lib->finish_read();
+        cell_libs_[gt::MIN] = lib;
+        cell_libs_[gt::MAX] = cell_libs_[gt::MIN];
         liberty_read = true;
     } else if (setting.CellLib_MIN != "" && setting.CellLib_MAX != "") {
         auto lib_min = std::make_shared<gt::CellLib>();
@@ -97,8 +95,10 @@ void Database::load() {
             lib_min->rawdb = this;
             lib_max->rawdb = this;
         }
-        if (setting.CellLib_MIN != "") lib_min->read(setting.CellLib_MIN);
-        if (setting.CellLib_MAX != "") lib_max->read(setting.CellLib_MAX);
+        lib_min->read(setting.CellLib_MIN);
+        lib_max->read(setting.CellLib_MAX);
+        lib_min->finish_read();
+        lib_max->finish_read();
         cell_libs_[gt::MIN] = lib_min;
         cell_libs_[gt::MAX] = lib_max;
         liberty_read = true;
@@ -108,6 +108,7 @@ void Database::load() {
         for (auto libfile : setting.LibFiles) {
             lib->read(libfile);
         }
+        lib->finish_read();
         cell_libs_[gt::MIN] = lib;
         cell_libs_[gt::MAX] = cell_libs_[gt::MIN];
         liberty_read = true;

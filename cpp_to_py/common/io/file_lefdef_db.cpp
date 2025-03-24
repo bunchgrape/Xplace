@@ -828,6 +828,15 @@ int readLefLayer(lefrCallbackType_e c, lefiLayer* leflayer, lefiUserData ud) {
         return 0;
     }
 
+    if (db->name_layers.find(name) != db->name_layers.end()) {
+        logger.warning("layer type re-defined: %s", name.c_str());
+        return 0;
+    }
+
+    if (type != 'r' && type != 'c') {
+        logger.warning("unsupported layer type: %s", name.c_str());
+        return 0;
+    }
     Layer& layer = db->addLayer(name, type);
 
     switch (type) {
