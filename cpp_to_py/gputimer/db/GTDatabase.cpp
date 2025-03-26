@@ -39,6 +39,17 @@ GTDatabase::GTDatabase(shared_ptr<db::Database> rawdb_, shared_ptr<gp::GPDatabas
     cell_libs_[MAX] = rawdb.cell_libs_[MAX];
 }
 
+
+set<string> common_timing(map<string, TimingArc *> a, map<string, TimingArc *> b) {
+    set<string> common;
+    for (auto& [k, v] : a) {
+        if (b.find(k) != b.end()) {
+            common.insert(k);
+        }
+    }
+    return common;
+}
+
 void GTDatabase::ExtractTimingGraph() {
     res_unit = cell_libs_[MIN]->resistance_unit_->value();
     cap_unit = cell_libs_[MIN]->capacitance_unit_->value();
@@ -49,38 +60,30 @@ void GTDatabase::ExtractTimingGraph() {
     //  Flatten Liberty Cell Timing
     //
     // write to tmp.log
-    std::ofstream ofs("tmp.log");
     for (db::CellType* cell_type : rawdb.celltypes) {
         string cell_type_name = cell_type->name;
-        ofs << "Macro " << cell_type_name << std::endl;
         array<LibertyCell*, 2> liberty_cell_view = {cell_libs_[MIN]->get_cell(cell_type_name), cell_libs_[MAX]->get_cell(cell_type_name)};
         if (!liberty_cell_view[MIN] || !liberty_cell_view[MAX]) {
             liberty_cell_type2port_list_end.push_back(liberty_cell_type2port_list_end.back());
             continue;
         }
-
-        if (cell_type_name == "OAI21x1_ASAP7_75t_R") {
-            bool debug = true;
-        }     
-
         liberty_cell_type2port_list_end.push_back(liberty_cell_type2port_list_end.back() + liberty_cell_view[MIN]->ports_.size());
         for (int i = 0; i < liberty_cell_view[MIN]->ports_.size(); i++) {
             array<LibertyPort*, 2> liberty_port_view = {liberty_cell_view[MIN]->ports_[i], liberty_cell_view[MAX]->ports_[i]};
-            ofs << "  Port " << liberty_cell_view[MIN]->ports_[i]->name << " " << liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_.size() << std::endl;
             for_each_el(el) {
                 liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[0].value_or(nanf("")));
                 liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[1].value_or(nanf("")));
                 liberty_port_capacitance.push_back(liberty_port_view[el]->port_capacitance_[2].value_or(0.0f));
             }
-            liberty_port2timing_list_end.push_back(liberty_port2timing_list_end.back() + liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_.size());
-            assert(liberty_port_view[MIN]->timing_arcs_.size() == liberty_port_view[MAX]->timing_arcs_.size());
-            for (int j = 0; j < liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_.size(); j++) {
-                liberty_timing_arcs.push_back(liberty_port_view[MIN]->timing_arcs_non_cond_non_bundle_[j]);
-                liberty_timing_arcs.push_back(liberty_port_view[MAX]->timing_arcs_non_cond_non_bundle_[j]);
+
+            for_each_el(el) {
+                liberty_port2timing_list_end.push_back(liberty_port2timing_list_end.back() + liberty_port_view[el]->timing_arcs_non_cond_non_bundle_.size());
+                for (int j = 0; j < liberty_port_view[el]->timing_arcs_non_cond_non_bundle_.size(); j++) {
+                    liberty_timing_arcs.push_back(liberty_port_view[el]->timing_arcs_non_cond_non_bundle_[j]);
+                }
             }
         }
     }
-    ofs.close();
 
     //  Traverse Circuit Pins
     //
@@ -101,11 +104,11 @@ void GTDatabase::ExtractTimingGraph() {
             auto dbiopin = rawdb.iopins[ori_node_id];
             pin_id2cell_type_id[pin_id] = -1;
             if (dbiopin->type->direction() == 'i') {
-                pin_outs.push_back(pin_id);
+                primary_outputs.push_back(pin_id);
                 endpoints_id.push_back(pin_id);
                 primary_output2pin_id[pin_name] = pin_id;
             } else if (dbiopin->type->direction() == 'o') {
-                pin_ins.push_back(pin_id);
+                primary_inputs.push_back(pin_id);
                 primary_input2pin_id[pin_name] = pin_id;
             }
         } else {
@@ -123,6 +126,8 @@ void GTDatabase::ExtractTimingGraph() {
             }
         }
     }
+    num_POs = primary_outputs.size();
+
 
     //  Map Pin to Liberty Timing
     //
@@ -167,15 +172,15 @@ void GTDatabase::ExtractTimingGraph() {
                 int pin_id2port_start = liberty_cell_type2port_list_end[libcell_id];
                 int pin_id2port_offset = pin_id2port_offset_id[pin_id];
                 int port_id = pin_id2port_start + pin_id2port_offset;
-                int start = liberty_port2timing_list_end[port_id];
-                int end = liberty_port2timing_list_end[port_id + 1];
+                int start = liberty_port2timing_list_end[2 * port_id + el];
+                int end = liberty_port2timing_list_end[2 * port_id + el + 1];
                 for (int i = start; i < end; i++) {
-                    TimingArc* timing_arc = liberty_timing_arcs[2 * i + el];
+                    TimingArc* timing_arc = liberty_timing_arcs[i];
                     if (is_redundant_timing(timing_arc, el)) {
                         continue;
                     }
                     array<int, 2> timing_view = {-1, -1};
-                    timing_view[el] = 2 * i + el;
+                    timing_view[el] = i;
                     // if (dbcell->name() == "_16845_") {
                     //     printf("%s from %d \n", timing_arc->from_port_->name.c_str(), gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->from_port_->name));
                     //     printf("%s to %d \n", timing_arc->to_port_->name.c_str(), gpdb.getNodes()[gpdb_id].getPinbyPortName(timing_arc->to_port_->name));
@@ -191,6 +196,7 @@ void GTDatabase::ExtractTimingGraph() {
 
                     if (timing_arc->is_constraint()) {
                         arc_id2test_id.push_back(num_tests++);
+                        test_id2_arc_id.push_back(num_arcs - 1);
                         endpoints_id.push_back(to_pin_id);
                     } else {
                         arc_id2test_id.push_back(-1);
@@ -252,6 +258,7 @@ void GTDatabase::ExtractTimingGraph() {
     timing_raw_db.arc_types = torch::from_blob(arc_types.data(), {static_cast<int>(arc_types.size())}, options).contiguous().to(device);
     timing_raw_db.timing_arc_id_map = torch::from_blob(timing_arc_id_map.data(), {static_cast<int>(timing_arc_id_map.size())}, options).contiguous().to(device);
     timing_raw_db.arc_id2test_id = torch::from_blob(arc_id2test_id.data(), {static_cast<int>(arc_id2test_id.size())}, options).contiguous().to(device);
+    timing_raw_db.test_id2_arc_id = torch::from_blob(test_id2_arc_id.data(), {static_cast<int>(test_id2_arc_id.size())}, options).contiguous().to(device);
     timing_raw_db.endpoints_id = torch::from_blob(endpoints_id.data(), {static_cast<index_type>(endpoints_id.size())}, options).contiguous().to(device);
 
     timing_raw_db.pinSlew = torch::zeros({num_pins, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::Device(device))).contiguous();
@@ -295,7 +302,7 @@ void GTDatabase::readSdc(sdc::SDC& sdc) {
     }
 
     // set nan slew of PIs to half period
-    for (auto& pi : pin_ins) {
+    for (auto& pi : primary_inputs) {
         if (torch::isnan(timing_raw_db.pinSlew[pi][0]).item<bool>()) timing_raw_db.pinSlew[pi][0] = 0.0f;
         if (torch::isnan(timing_raw_db.pinSlew[pi][1]).item<bool>()) timing_raw_db.pinSlew[pi][1] = 0.0f;
         if (torch::isnan(timing_raw_db.pinSlew[pi][2]).item<bool>()) timing_raw_db.pinSlew[pi][2] = 0.0f;
@@ -351,7 +358,7 @@ void GTDatabase::_read_sdc(sdc::SetInputDelay& obj) {
     auto mask = sdc::TimingMask(obj.min, obj.max, obj.rise, obj.fall);
 
     std::visit(Functors{[&](sdc::AllInputs&) {
-                            for (auto& pi : pin_ins) {
+                            for (auto& pi : primary_inputs) {
                                 for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     // pinAT[pi * NUM_ATTR + (el << 1) + rf] = *obj.delay_value;
                                     float delay = *obj.delay_value;
@@ -384,7 +391,7 @@ void GTDatabase::_read_sdc(sdc::SetInputTransition& obj) {
     auto mask = sdc::TimingMask(obj.min, obj.max, obj.rise, obj.fall);
 
     std::visit(Functors{[&](sdc::AllInputs&) {
-                            for (auto& pi : pin_ins) {
+                            for (auto& pi : primary_inputs) {
                                 for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     float transition = *obj.transition;
                                     if (sdc_time_unit.has_value()) transition = transition * *sdc_time_unit / time_unit;
@@ -423,7 +430,7 @@ void GTDatabase::_read_sdc(sdc::SetOutputDelay& obj) {
     auto mask = sdc::TimingMask(obj.min, obj.max, obj.rise, obj.fall);
 
     std::visit(Functors{[&](sdc::AllOutputs&) {
-                            for (auto& po : pin_outs) {
+                            for (auto& po : primary_outputs) {
                                 for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     float delay = *obj.delay_value;
                                     if (sdc_time_unit.has_value()) delay = delay * *sdc_time_unit / time_unit;
@@ -455,7 +462,7 @@ void GTDatabase::_read_sdc(sdc::SetLoad& obj) {
     auto mask = sdc::TimingMask(obj.min, obj.max, std::nullopt, std::nullopt);
 
     std::visit(Functors{[&](sdc::AllOutputs&) {
-                            for (auto& po : pin_outs) {
+                            for (auto& po : primary_outputs) {
                                 for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                     float load = *obj.value;
                                     if (sdc_res_unit.has_value()) load = load * *sdc_res_unit / res_unit;

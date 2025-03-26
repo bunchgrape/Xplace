@@ -21,11 +21,11 @@ void GPUTimer::initialize() {
 
     cudaMalloc(&net_is_clock, num_nets * sizeof(int));
     cudaMalloc(&level_list, num_pins * sizeof(int));
-    cudaMalloc(&pin_outs, num_POs * sizeof(index_type));
+    cudaMalloc(&primary_outputs, num_POs * sizeof(index_type));
 
     cudaMemcpy(pinCap, gtdb.pin_capacitance.data(), num_pins * (NUM_ATTR + 2) * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(net_is_clock, gtdb.net_is_clock.data(), num_nets * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(pin_outs, gtdb.pin_outs.data(), gtdb.pin_outs.size() * sizeof(index_type), cudaMemcpyHostToDevice);
+    cudaMemcpy(primary_outputs, gtdb.primary_outputs.data(), gtdb.primary_outputs.size() * sizeof(index_type), cudaMemcpyHostToDevice);
 
     // auto GPUTiming = GPULutAllocator();
     // GPUTiming.AllocateBatch(gtdb.timings);
@@ -70,7 +70,7 @@ GPUTimer::~GPUTimer() {
 
     cudaFree(net_is_clock);
     cudaFree(level_list);
-    cudaFree(pin_outs);
+    cudaFree(primary_outputs);
 
     cudaFree(__pinSlew__);
     cudaFree(__pinLoad__);
@@ -108,6 +108,58 @@ void GPUTimer::update_states() {
     device_copy_batch<float><<<BLOCK_NUMBER(num_pins * NUM_ATTR), BLOCK_SIZE>>>(__pinRAT__, pinRAT, num_pins * NUM_ATTR);
     device_copy_batch<float><<<BLOCK_NUMBER(num_pins * NUM_ATTR), BLOCK_SIZE>>>(__pinAT__, pinAT, num_pins * NUM_ATTR);
     cudaDeviceSynchronize();
+}
+
+__global__ void update_endpoints_kernel0(float *pinAT, float *testRAT, int *test_id2_arc_id, index_type *timing_arc_from_pin_id, index_type *timing_arc_to_pin_id, float *endpoints0, int num_tests) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int test_idx = idx >> 2;
+    const int i = idx & 0b11;
+    const int el = i >> 1;
+    const int rf = i & 1;
+    if (test_idx < num_tests) {
+        const int arc_id = test_id2_arc_id[test_idx];
+        const int from_pin_id = timing_arc_from_pin_id[arc_id];
+        const int to_pin_id = timing_arc_to_pin_id[arc_id];
+        // printf("test idx %d arc id %d from %d to %d\n", test_idx, arc_id, from_pin_id, to_pin_id);
+        // printf("test pin idx %d at %.5f rat %.5f\n", to_pin_id, pinAT[to_pin_id * NUM_ATTR + i], testRAT[test_idx *
+        // NUM_ATTR + i]);
+        if (isnan(pinAT[to_pin_id * NUM_ATTR + i]) || isnan(testRAT[test_idx * NUM_ATTR + i])) return;
+        if (el == 0) {
+            endpoints0[test_idx * NUM_ATTR + i] = pinAT[to_pin_id * NUM_ATTR + i] - testRAT[test_idx * NUM_ATTR + i];
+        } else {
+            endpoints0[test_idx * NUM_ATTR + i] = testRAT[test_idx * NUM_ATTR + i] - pinAT[to_pin_id * NUM_ATTR + i];
+        }
+    }
+}
+
+__global__ void update_endpoints_kernel1(float *pinAT, float *pinRAT, index_type *primary_outputs, float *endpoints1, int num_POs) {
+    const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int po_idx = idx >> 2;
+    const int i = idx & 0b11;
+    const int el = i >> 1;
+    if (po_idx < num_POs) {
+        const int pin_idx = primary_outputs[po_idx];
+        // printf("po pin idx %d at %.5f rat %.5f\n", pin_idx, pinAT[pin_idx * NUM_ATTR + i], pinRAT[pin_idx * NUM_ATTR
+        // + i]);
+        if (isnan(pinAT[pin_idx * NUM_ATTR + i]) || isnan(pinRAT[pin_idx * NUM_ATTR + i])) return;
+        if (el == 0) {
+            endpoints1[po_idx * NUM_ATTR + i] = pinAT[pin_idx * NUM_ATTR + i] - pinRAT[pin_idx * NUM_ATTR + i];
+        } else {
+            endpoints1[po_idx * NUM_ATTR + i] = pinRAT[pin_idx * NUM_ATTR + i] - pinAT[pin_idx * NUM_ATTR + i];
+        }
+    }
+}
+
+void GPUTimer::update_endpoints() {
+    torch::Tensor endpoints0 = torch::zeros({num_tests, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::kCUDA)).contiguous();
+    torch::Tensor endpoints1 = torch::zeros({num_POs, NUM_ATTR}, torch::dtype(torch::kFloat32).device(torch::kCUDA)).contiguous();
+    torch::fill_(endpoints0, nanf(""));
+    torch::fill_(endpoints1, nanf(""));
+
+    update_endpoints_kernel0<<<BLOCK_NUMBER(num_tests * NUM_ATTR), BLOCK_SIZE>>>(pinAT, testRAT, test_id2_arc_id, timing_arc_from_pin_id, timing_arc_to_pin_id, endpoints0.data_ptr<float>(), num_tests);
+    update_endpoints_kernel1<<<BLOCK_NUMBER(num_POs * NUM_ATTR), BLOCK_SIZE>>>(pinAT, pinRAT, primary_outputs, endpoints1.data_ptr<float>(), num_POs);
+
+    endpoint_slacks = torch::cat({endpoints0, endpoints1}, 0).contiguous();
 }
 
 }  // namespace gt

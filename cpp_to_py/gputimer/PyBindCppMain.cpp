@@ -5,6 +5,9 @@
 #include "gputimer/db/GTDatabase.h"
 #include "gputimer/core/GPUTimer.h"
 
+#include <flute.hpp>
+using namespace Flute;
+
 namespace Xplace {
 
 std::shared_ptr<gt::GPUTimer> create_gputimer(const py::dict& kwargs,
@@ -12,24 +15,9 @@ std::shared_ptr<gt::GPUTimer> create_gputimer(const py::dict& kwargs,
                                               std::shared_ptr<gp::GPDatabase> gpdb,
                                               std::shared_ptr<gt::TimingTorchRawDB> timing_raw_db) {
     std::shared_ptr<gt::GTDatabase> gtdb = std::make_shared<gt::GTDatabase>(rawdb, gpdb, timing_raw_db);
-
     auto sdc = std::make_shared<gt::sdc::SDC>();
 
     try {
-        // if (kwargs.contains("lib")) {
-        //     cout << "=============================\n";
-        //     auto celllib = std::make_shared<gt::Celllib>();
-        //     celllib->read(kwargs["lib"].cast<std::string>());
-        //     gtdb->celllib[gt::MIN] = std::move(*celllib);
-        //     gtdb->celllib[gt::MAX] = gtdb->celllib[gt::MIN];
-        // } else {
-        //     auto celllib_min = std::make_shared<gt::Celllib>();
-        //     auto celllib_max = std::make_shared<gt::Celllib>();
-        //     if (kwargs.contains("early_lib")) celllib_min->read(kwargs["early_lib"].cast<std::string>());
-        //     if (kwargs.contains("late_lib")) celllib_max->read(kwargs["late_lib"].cast<std::string>());
-        //     gtdb->celllib[gt::MIN] = std::move(*celllib_min);
-        //     gtdb->celllib[gt::MAX] = std::move(*celllib_max);
-        // }
         if (kwargs.contains("sdc")) sdc->read(kwargs["sdc"].cast<std::string>());
     } catch (std::exception& e) {
         logger.error("%s\n", e.what());
@@ -40,9 +28,8 @@ std::shared_ptr<gt::GPUTimer> create_gputimer(const py::dict& kwargs,
 
     std::shared_ptr<gt::GPUTimer> gputimer = std::make_shared<gt::GPUTimer>(gtdb, timing_raw_db);
 
-    // gputimer->initialize();
-
-    // return std::move(gputimer);
+    readLUT("thirdparty/flute_mp/lut.ICCAD2015/POWV9.dat", "thirdparty/flute_mp/lut.ICCAD2015/POST9.dat");
+    
     return gputimer;
 }
 

@@ -129,13 +129,14 @@ public:
     vector<int> timing_arc_from_pin_id, timing_arc_to_pin_id;
     vector<int> timing_arc_id_map;
     vector<int> arc_types, arc_id2test_id;
+    vector<int> test_id2_arc_id;
     vector<int> net_is_clock;
 
     // Timing Graph
     /// @param pin_frontiers                  Cell libraries
     /// @param pin_fanout_list_end               vector of celllib views
     /// @param pin_fanout_list                map from cell name to cell view index
-    vector<index_type> pin_ins, pin_outs;
+    vector<index_type> primary_inputs, primary_outputs;
     vector<index_type> pin_frontiers;
     vector<index_type> pin_fanout_list_end, pin_fanout_list;
     vector<int> pin_num_fanin;
@@ -283,10 +284,12 @@ public:
     /// @param arc_types                Types of an arc: 0/1
     /// @param timing_arc_id_map              Timing liberty index of an arc
     /// @param arc_id2test_id                Timing test index of an arc: -1 for non-test arcs
+    /// @param test_id2_arc_id                Timing test index of an arc: -1 for non-test arcs
 public:
     torch::Tensor arc_types;
     torch::Tensor timing_arc_id_map;
     torch::Tensor arc_id2test_id;
+    torch::Tensor test_id2_arc_id;
 };
 
 }  // namespace gt

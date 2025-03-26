@@ -45,10 +45,18 @@ __global__ void RCTreeNet(float *x,
             float pin_cap = cf * wl * 0.5;
             float pin_res = rf * wl;
             root_cap += pin_cap;
+            // if (pin_id == 14893) {
+            //     printf("pin %d, x %.5f, y %.5f, dist %.5f, wl %.5f, cap %.5f, res %.5f\n", pin_id, x_pin, y_pin, dist, wl, pin_cap, pin_res);
+            // }
             for (int j = 0; j < NUM_ATTR; j++) {
                 float pin_cap_lib =
                     isnan(pinCap[pin_id * (NUM_ATTR + 2) + j]) ? pinCap[pin_id * (NUM_ATTR + 2) + 4 + (j >> 1)] : pinCap[pin_id * (NUM_ATTR + 2) + j];
                 float load = pinLoad[pin_id * NUM_ATTR + j];
+
+                // if (pin_id == 14893) {
+                //     printf("load %.5f, pin_cap %.5f, pin_cap_lib %.5f\n", load, pin_cap, pin_cap_lib);
+                // }
+
                 pinLoad[pin_id * NUM_ATTR + j] = isnan(load) ? pin_cap + pin_cap_lib : load + pin_cap + pin_cap_lib;
                 pinRootRes[pin_id * NUM_ATTR + j] = pin_res;
                 pinLoad[root * NUM_ATTR + j] = isnan(pinLoad[root * NUM_ATTR + j]) ? pinLoad[pin_id * NUM_ATTR + j]

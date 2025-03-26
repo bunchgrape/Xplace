@@ -75,8 +75,9 @@ public:
     index_type *pin_backward_arc_list_end, *pin_backward_arc_list;
     index_type *timing_arc_from_pin_id, *timing_arc_to_pin_id;
     int *arc_types, *timing_arc_id_map, *arc_id2test_id;
+    int* test_id2_arc_id;
 
-    index_type* pin_outs;
+    index_type* primary_outputs;
     TimingArc* liberty_timing_arcs;
     index_type *level_list_end, *level_list;
     vector<int> level_list_end_cpu;

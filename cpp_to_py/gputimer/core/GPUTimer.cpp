@@ -46,6 +46,7 @@ GPUTimer::GPUTimer(std::shared_ptr<GTDatabase> gtdb_, shared_ptr<TimingTorchRawD
       timing_arc_id_map(timing_raw_db.timing_arc_id_map.data_ptr<int>()),
       arc_types(timing_raw_db.arc_types.data_ptr<int>()),
       arc_id2test_id(timing_raw_db.arc_id2test_id.data_ptr<int>()),
+      test_id2_arc_id(timing_raw_db.test_id2_arc_id.data_ptr<int>()),
       // circuit info
       flat_node2pin_start_map(timing_raw_db.flat_node2pin_start_map.data_ptr<int>()),
       flat_node2pin_map(timing_raw_db.flat_node2pin_map.data_ptr<int>()),
@@ -123,15 +124,15 @@ torch::Tensor GPUTimer::report_pin_slack() {
     return pin_slacks.contiguous();
 }
 
-void GPUTimer::update_endpoints() {
-    pin_slacks = torch::zeros_like(timing_raw_db.pinAT, torch::dtype(torch::kFloat32).device(timing_raw_db.pinAT.device()));
-    auto s1 = timing_raw_db.pinAT - timing_raw_db.pinRAT;
-    auto s2 = timing_raw_db.pinRAT - timing_raw_db.pinAT;
-    pin_slacks.index({"...", torch::indexing::Slice(0, 2)}).data().copy_(s1.index({"...", torch::indexing::Slice(0, 2)}));
-    pin_slacks.index({"...", torch::indexing::Slice(2, 4)}).data().copy_(s2.index({"...", torch::indexing::Slice(2, 4)}));
+// void GPUTimer::update_endpoints() {
+//     pin_slacks = torch::zeros_like(timing_raw_db.pinAT, torch::dtype(torch::kFloat32).device(timing_raw_db.pinAT.device()));
+//     auto s1 = timing_raw_db.pinAT - timing_raw_db.pinRAT;
+//     auto s2 = timing_raw_db.pinRAT - timing_raw_db.pinAT;
+//     pin_slacks.index({"...", torch::indexing::Slice(0, 2)}).data().copy_(s1.index({"...", torch::indexing::Slice(0, 2)}));
+//     pin_slacks.index({"...", torch::indexing::Slice(2, 4)}).data().copy_(s2.index({"...", torch::indexing::Slice(2, 4)}));
     
-    auto [endpoints_id, tmp1] = torch::_unique(timing_raw_db.endpoints_id);
-    endpoint_slacks = torch::nan_to_num(pin_slacks.index_select(0, endpoints_id));
-}
+//     auto [endpoints_id, tmp1] = torch::_unique(timing_raw_db.endpoints_id);
+//     endpoint_slacks = torch::nan_to_num(pin_slacks.index_select(0, endpoints_id));
+// }
 
 }  // namespace gt
