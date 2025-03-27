@@ -731,9 +731,11 @@ void Database::SetupRowSegments() {
 }
 
 void Database::setup() {
-    SetupLayers();
+    if (def_read) {
+        SetupLayers();
+        SetupFloorplan();
+    }
     SetupCellLibrary();
-    SetupFloorplan();
     SetupRegions();
     if (!setting.liteMode) {
         SetupSiteMap();
@@ -746,6 +748,7 @@ void Database::setup() {
 Layer& Database::addLayer(const string& name, const char type) {
     layers.emplace_back(name, type);
     Layer& newlayer = layers.back();
+    name_layers.emplace(name, &newlayer);
     if (layers.size() == 1) {
         if (type == 'r') {
             newlayer.rIndex = 0;
@@ -790,7 +793,7 @@ ViaType* Database::addViaType(const string& name, bool isDef) {
 CellType* Database::addCellType(const string& name, unsigned libcell) {
     CellType* celltype = getCellType(name);
     if (celltype) {
-        logger.warning("cell type re-defined: %s", name.c_str());
+        // logger.warning("cell type re-defined: %s", name.c_str());
         return celltype;
     }
     celltype = new CellType(name, libcell);
@@ -829,7 +832,7 @@ IOPin* Database::addIOPin(const string& name, const string& netName, const char 
 Net* Database::addNet(const string& name, const NDR* ndr) {
     Net* net = getNet(name);
     if (net) {
-        logger.warning("Net re-defined: %s", name.c_str());
+        // logger.warning("Net re-defined: %s", name.c_str());
         return net;
     }
     net = new Net(name, ndr);

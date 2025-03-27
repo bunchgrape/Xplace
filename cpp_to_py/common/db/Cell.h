@@ -122,6 +122,7 @@ public:
     const std::string& name() const { return _name; }
     Pin* pin(const std::string& name) const;
     Pin* pin(unsigned i) const { return _pins[i]; }
+    std::vector<Pin*> pins() { return _pins; }
     CellType* ctype() const { return _type; }
     void ctype(CellType* t);
     int lx() const;

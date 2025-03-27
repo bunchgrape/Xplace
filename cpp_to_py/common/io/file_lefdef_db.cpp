@@ -829,7 +829,7 @@ int readLefLayer(lefrCallbackType_e c, lefiLayer* leflayer, lefiUserData ud) {
     }
 
     if (db->name_layers.find(name) != db->name_layers.end()) {
-        logger.warning("layer type re-defined: %s", name.c_str());
+        // logger.warning("layer type re-defined: %s", name.c_str());
         return 0;
     }
 

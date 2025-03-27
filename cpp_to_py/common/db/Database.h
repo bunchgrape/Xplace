@@ -191,6 +191,7 @@ public:
     bool writeICCAD2017(const string& inputDef, const string& outputDef);
     bool writeICCAD2017(const string& outputDef);
     bool writeComponents(std::ofstream& ofs);
+    bool writeNets(std::ofstream& ofs);
     bool writeBuffer(std::ofstream& ofs, const string& line);
     void writeBufferFlush(std::ofstream& ofs);
 
@@ -205,7 +206,9 @@ public:
     bool writeBSPl(const std::string& file);
 
     bool readVerilog(const std::string& file);
+    bool readVerilog_yy(const std::string &file);
     bool readLiberty(const std::string& file);
+    bool write_verilog(const std::string& file);
 
     bool readConstraints(const std::string& file);
     bool readSize(const std::string& file);

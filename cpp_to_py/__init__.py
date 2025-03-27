@@ -11,6 +11,7 @@ __all__ = [
     "gpudp",
     "routedp",
     "gputimer",
+    "wirelength_timing_cuda"
 ]
 from .cpybin import (
     dct_cuda,
@@ -24,5 +25,6 @@ from .cpybin import (
     gpudp,
     routedp,
     gputimer,
+    wirelength_timing_cuda
 )
 
