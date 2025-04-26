@@ -78,7 +78,6 @@ void bindGPDatabase(pybind11::module& m) {
         .def("apply_node_lpos", &gp::GPDatabase::applyNodeLPos)
         .def("write_placement", &gp::GPDatabase::writePlacement)
         .def("get_io_nets", &gp::GPDatabase::getIONets)
-        .def("celltype_size_tensor", &gp::GPDatabase::getCelltypeSizeTensor, py::return_value_policy::move)
         ;
 }
 

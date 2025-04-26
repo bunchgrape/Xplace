@@ -1,11 +1,10 @@
 import torch
-from cpp_to_py import gputimer
-from .wa_wirelength_hpwl import hpwl_cache
+from cpp_to_py import gputimer, wirelength_timing_cuda
 from src.param_scheduler import MetricRecorder
 from utils import *
 from pdb import set_trace as bp
 
-class gpuTimer():
+class GPUTimer():
     def __init__(self, data, rawdb, gpdb, params, args):
         self.metrics = [
             "wns",
@@ -82,7 +81,7 @@ class gpuTimer():
         self.alpha = torch.ones(data.num_pins, dtype=torch.float32, device=data.device) * self.init_alpha
         self.global_weight = 1
 
-        self.target_wns = args.target_wns
+        self.target_wns = 0
         
     def update_timing(self, node_pos):
         node_lpos = (node_pos.detach() - self.node_size / 2).to(self.data.device)
@@ -185,10 +184,21 @@ class gpuTimer():
         node_slacks_mask = node_slacks > ep_slacks.min() * 0.95
         return node_slacks_mask
     
+    def get_node_critocality(self):
+        pin_slacks, _ = torch.min((torch.nan_to_num(self.report_pin_slack()) * (1e-9 / self.timer.time_unit())).clamp(max=0), 1)
+        endpoints_index = self.timer.endpoints_index().long()
+        endpoints_index = torch.unique(endpoints_index)
+        ep_id2node_id = self.data.pin_id2node_id[endpoints_index]
+        ep_slacks = pin_slacks[endpoints_index]
+        node_slacks = torch.zeros(self.node_weight.size(0), dtype=torch.float32, device=self.data.device)
+        node_slacks.scatter_add_(0, ep_id2node_id, ep_slacks)
+        node_critocality = torch.abs(node_slacks) / (torch.abs(node_slacks)).max()
+        return node_critocality
+
     def step(self, ps, node_pos, data):
-        # self.update_timing(node_pos)
-        slacks, _ = torch.min((torch.nan_to_num(self.report_pin_slack()) - self.target_wns * (1e-9 / self.timer.time_unit())).clamp(max=0), 1)
-        delay_k, _ = self.timer.report_criticality_threshold(0.1, False, True)
+        # slacks, _ = torch.min((torch.nan_to_num(self.report_pin_slack()) - self.target_wns * (1e-9 / self.timer.time_unit())).clamp(max=0), 1)
+        slacks, _ = torch.min(torch.nan_to_num(self.report_pin_slack()).clamp(max=0), 1)
+        delay_k, _ = self.timer.report_criticality_threshold(0.75, False, True)
         delay_1, pin_visited = self.timer.report_criticality_threshold(0.99, False, True)
         
         self.tns_record.append(self.recorder.tns[-1])
@@ -201,16 +211,16 @@ class gpuTimer():
         x_wns = torch.tensor(self.wns_max[-window:], dtype=torch.float32)
         x_delay_k = torch.tensor(self.delay_K_max[-window:], dtype=torch.float32)
         x_delay_1 = torch.tensor(self.delay_1_max[-window:], dtype=torch.float32)
-        wns_mean = torch.mean(x_wns)
-        delay_k_mean = torch.mean(x_delay_k)
-        delay_1_mean = torch.mean(x_delay_1)
+        # wns_mean = torch.mean(x_wns)
+        # delay_k_mean = torch.mean(x_delay_k)
+        # delay_1_mean = torch.mean(x_delay_1)
         wns_mean = x_wns[-1]
         delay_k_mean = x_delay_k[-1]
         delay_1_mean = x_delay_1[-1]
         
-        pin_weight = slacks.abs() / (np.abs(wns_mean) + 1e-6) * self.beta
-        # pin_weight += (delay_k / delay_k_mean.clamp(min=1)) * self.beta * 2
-        # pin_weight += torch.pow(2, (delay_1 / delay_1_mean.clamp(min=1))) * pin_visited.clamp(max=1)
+        pin_weight = slacks.abs() / (np.abs(wns_mean)) * self.beta
+        pin_weight += (delay_k / delay_k_mean.clamp(min=1)) * self.beta * 2
+        pin_weight += torch.pow(2, (delay_1 / delay_1_mean.clamp(min=1))) * pin_visited.clamp(max=1)
         
         ## ==============================
         w_0 = pin_weight
@@ -220,10 +230,11 @@ class gpuTimer():
             delta_w_0 = w_0 - self.w_1
         if self.w_2 is not None:
             delta_w_1 = self.w_1 - self.w_2
+
         if delta_w_0 is not None and delta_w_1 is not None:
             decay = (self.decay * torch.pow(5, delta_w_0.clamp(min=0)) / self.decay_boost).clamp(max=0.5)
         else:
-            decay = self.decay
+            decay = 1
         
         # decay = self.decay
             
@@ -258,7 +269,7 @@ class gpuTimer():
             os.makedirs(os.path.dirname(prefix))
         self.recorder.visualize(prefix, True)
 
-def merged_wl_loss_grad_with_timing(
+def merged_wl_loss_grad_timing(
     node_pos,
     timing_pin_grads,
     pin_id2node_id,
@@ -278,7 +289,7 @@ def merged_wl_loss_grad_with_timing(
         partial_wa_wl,
         node_grad,
         partial_hpwl,
-    ) = wa_wirelength_timing_cuda.merged_wl_loss_grad_with_timing(
+    ) = wirelength_timing_cuda.merged_wl_loss_grad_timing(
         node_pos,
         timing_pin_grads,
         pin_id2node_id,
@@ -293,6 +304,4 @@ def merged_wl_loss_grad_with_timing(
         gamma,
         deterministic,
     )
-    if cache_hpwl:
-        hpwl_cache.masked_scale_partial_hpwl = partial_hpwl
     return torch.sum(partial_wa_wl), node_grad

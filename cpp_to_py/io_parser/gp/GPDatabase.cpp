@@ -51,8 +51,6 @@ void GPDatabase::addCellNode(index_type cell_id, std::string& node_type) {
     cell->gpdb_id = nodes.size() - 1;
 
     node_names.push_back(cell->name());
-    node_type_names.push_back(cell->ctype()->name);
-    node_celltype_index.push_back(cell->ctype()->libcell());
 }
 
 void GPDatabase::addIOPinNode(index_type iopin_id, std::string& node_type) {

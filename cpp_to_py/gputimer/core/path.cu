@@ -19,10 +19,10 @@ __global__ void explore_path_kernel(index_type* at_prefix_pin,
                                     float* from_pin_delay,
                                     torch::PackedTensorAccessor32<int, 1, torch::RestrictPtrTraits> pin_visited,
                                     int K) {
-    const int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < K) {
-        index_type cur_id = endpoints_index[indices[index]];
-        int to_i = ep_i_indices[indices[index]];
+    const int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k < K) {
+        index_type cur_id = endpoints_index[indices[k]];
+        int to_i = ep_i_indices[indices[k]];
         while (cur_id != -1) {
             atomicAdd(&pin_visited[cur_id], 1);
             int prev_id = at_prefix_pin[cur_id * NUM_ATTR + to_i];
@@ -33,7 +33,7 @@ __global__ void explore_path_kernel(index_type* at_prefix_pin,
             float delay = 0;
             if (prev_id != -1) {
                 at = pinAT[cur_id * NUM_ATTR + to_i];
-                delay = arcDelay[arc_id * 2 * NUM_ATTR + arc_i] / pow(1 + K, 2);
+                delay = arcDelay[arc_id * 2 * NUM_ATTR + arc_i] / pow(1 + k, 2);
 
                 if (arc_types[arc_id] == 0) {
                     atomicAdd(&from_pin_delay[cur_id], delay);
@@ -61,10 +61,10 @@ __global__ void explore_path_deterministic_kernel(index_type* at_prefix_pin,
                                                   torch::PackedTensorAccessor32<int, 1, torch::RestrictPtrTraits> pin_visited,
                                                   int K,
                                                   unsigned long long scalar) {
-    const int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < K) {
-        index_type cur_id = endpoints_index[indices[index]];
-        int to_i = ep_i_indices[indices[index]];
+    const int k = blockIdx.x * blockDim.x + threadIdx.x;
+    if (k < K) {
+        index_type cur_id = endpoints_index[indices[k]];
+        int to_i = ep_i_indices[indices[k]];
         while (cur_id != -1) {
             atomicAdd(&pin_visited[cur_id], 1);
             int prev_id = at_prefix_pin[cur_id * NUM_ATTR + to_i];
@@ -75,7 +75,7 @@ __global__ void explore_path_deterministic_kernel(index_type* at_prefix_pin,
             float delay = 0;
             if (prev_id != -1) {
                 at = pinAT[cur_id * NUM_ATTR + to_i];
-                delay = arcDelay[arc_id * 2 * NUM_ATTR + arc_i] / pow(1 + K, 2);
+                delay = arcDelay[arc_id * 2 * NUM_ATTR + arc_i] / pow(1 + k, 2);
 
                 if (arc_types[arc_id] == 0) {
                     atomicAdd(&from_pin_delay[cur_id], static_cast<unsigned long long>(delay * scalar));

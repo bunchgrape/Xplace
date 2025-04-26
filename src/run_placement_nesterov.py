@@ -1,6 +1,8 @@
 from utils import *
 from src import *
 from functools import partial
+from pdb import set_trace as bp
+import itertools
 
 def get_trunc_node_pos_fn(mov_node_size, data):
     node_pos_lb = mov_node_size / 2 + data.die_ll + 1e-4 
@@ -10,7 +12,7 @@ def get_trunc_node_pos_fn(mov_node_size, data):
         return x
     return trunc_node_pos_fn
 
-def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args, logger):
+def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args, logger, params, gputimer=None):
     init_density_map = data.init_density_map
     if not args.global_placement:
         logger.info("Global placement is switched off. Please make sure the input "
@@ -135,12 +137,38 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
     terminate_signal = False
     route_early_terminate_signal = False
     log_info = False
+    timing_cali_thrs_overflow = 0.5
+    timing_calibration = False
     for iteration in range(args.inner_iter):
         # optimizer.zero_grad() # zero grad inside obj_and_grad_fn
         obj = optimizer.step(obj_and_grad_fn)
         hpwl, overflow = evaluator_fn(mov_node_pos)
         # update parameters
         ps.step(hpwl, overflow, mov_node_pos, data)
+
+        # Perform timing-opt.
+        if args.timing_opt and iteration > args.timing_start_iter and iteration % 1 == 0:
+            if not ps.enable_timing:
+                logger.info("timing_pin_weight %s")
+            ps.enable_timing = True
+            node_pos = torch.cat([mov_node_pos[mov_lhs:mov_rhs].clone(), data.node_pos[mov_rhs:]], dim=0)
+            
+            if args.calibration and ps.recorder.overflow[-1] < timing_cali_thrs_overflow:
+                gputimer.update_timing_calibrated(node_pos, record=True)
+                timing_cali_thrs_overflow -= args.calibration_step
+                timing_calibration = True
+            elif timing_calibration:
+                gputimer.update_timing_calibrated(node_pos)
+            else:
+                gputimer.update_timing(node_pos)
+            
+            timing_metrics = gputimer.report_timing_slack()
+            wns_early, tns_early, wns_late, tns_late = timing_metrics
+            ps.push_timing_sol(timing_metrics, hpwl, overflow, mov_node_pos)
+            
+            if iteration % args.timing_freq == 0:
+                gputimer.step(ps, node_pos, data)
+
         if ps.need_to_early_stop():
             terminate_signal = True
             log_info = True
@@ -317,6 +345,10 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
                     ps.wa_coeff,
                 )
             )
+            if ps.enable_timing:
+                log_str += " | early WNS/TNS: %.4f %.4f (ns) | late WNS/TNS: %.4f %.4f (ns)" % (
+                    wns_early, tns_early, wns_late, tns_late
+                )
             logger.info(log_str)
             if args.draw_placement:
                 info = (iteration, hpwl, data.design_name)
@@ -365,6 +397,10 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
             ps.push_gr_sol(gr_metrics, hpwl, overflow, mov_node_pos)
         best_sol_gr = ps.get_best_gr_sol()
         mov_node_pos[mov_lhs:mov_rhs].data.copy_(best_sol_gr[mov_lhs:mov_rhs])
+    if ps.enable_timing and not ps.enable_route:
+        best_sol_timing = ps.get_best_timing_sol()
+        if best_sol_timing is not None:
+            mov_node_pos[mov_lhs:mov_rhs].data.copy_(best_sol_timing[mov_lhs:mov_rhs])
 
     node_pos = mov_node_pos[mov_lhs:mov_rhs]
     node_pos = torch.cat([node_pos, data.node_pos[mov_rhs:]], dim=0)
@@ -375,6 +411,11 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
     logger.info("GP Stop! #Iters %d masked_hpwl: %.6E overflow: %.4f GP Time: %.4fs perIterTime: %.6fs" % 
         (iteration, hpwl, overflow, gp_time, gp_time / (iteration + 1))
     )
+
+    # iteration = 0
+    # gp_end_time = 0
+    # gp_start_time = 0
+    # node_pos = torch.load("gp.pt")
 
     # Eval
     hpwl, overflow = evaluate_placement(node_pos, init_density_map, ps, data, args)
@@ -411,15 +452,58 @@ def run_placement_main_nesterov(args, logger):
 
     ps = ParamScheduler(data, args, logger)
 
-    # global placement
-    node_pos, iteration, gp_hpwl, overflow, gp_time, gp_per_iter = global_placement_main(
-        gpdb, rawdb, ps, data, args, logger
-    )
-    # detail placement
-    node_pos, dp_hpwl, top5overflow, lg_time, dp_time = detail_placement_main(
-        node_pos, gpdb, rawdb, ps, data, args, logger
-    )
-    iteration += 1
+
+
+    # timing_init_weight = [0.04, 0.05]
+    # decay_factor = [0.4, 0.2, 0.3]
+    # decay_boost = [2, 3, 4]
+
+    # # timing_init_weight = [0.04]
+    # # decay_factor = [0.4]
+    # # decay_boost = [2]
+
+    # for (i, j, k) in itertools.product(timing_init_weight, decay_factor, decay_boost):
+    #     args.timing_init_weight = i
+    #     args.decay_factor = j
+    #     args.decay_boost = k
+    if True:
+        gputimer = None
+        if args.timing_opt:        
+            gputimer = GPUTimer(data, rawdb, gpdb, params, args)
+            data.gputimer = gputimer
+            def timing_eval_func(node_pos):
+                gputimer.update_timing_eval(node_pos)
+                wns_early, tns_early, wns_late, tns_late = gputimer.report_timing_slack()
+                logger.info("early WNS/TNS: %.4f/%.4f (ns) | late WNS/TNS: %.4f/%.4f (ns)" % (wns_early, tns_early, wns_late, tns_late))
+                return wns_early, tns_early, wns_late, tns_late
+            
+
+        set_random_seed(args)
+        ps = ParamScheduler(data, args, logger)
+
+        # global placement
+        node_pos, iteration, gp_hpwl, overflow, gp_time, gp_per_iter = global_placement_main(
+            gpdb, rawdb, ps, data, args, logger, params, gputimer
+        )
+        if args.timing_opt:
+            wns_early_gp, tns_early_gp, wns_late_gp, tns_late_gp = timing_eval_func(node_pos)
+
+        # detail placement
+        node_pos, dp_hpwl, top5overflow, lg_time, dp_time = detail_placement_main(
+            node_pos, gpdb, rawdb, ps, data, args, logger
+        )
+        if args.timing_opt:
+            wns_early_dp, tns_early_dp, wns_late_dp, tns_late_dp = timing_eval_func(node_pos)
+        iteration += 1
+
+        # dump quality to csv
+        script_dir = os.path.join(args.result_dir, "quality.csv")
+        with open(script_dir, "a") as f:
+            if f.tell() == 0:
+                f.write("design_name,GP_HPWL,DP_HPWL, timing_init_weight, decay_factor, decay_boost, wns_late_dp, tns_late_dp\n")
+            f.write("%s,%.4E,%.4E,%.4f,%.4f,%.4f,%.4f,%.4f\n" % (
+                args.design_name, gp_hpwl, dp_hpwl, args.timing_init_weight, args.decay_factor, args.decay_boost, wns_late_dp, tns_late_dp
+            ))
 
     route_metrics = None
     if ps.enable_route and args.final_route_eval:
@@ -435,6 +519,7 @@ def run_placement_main_nesterov(args, logger):
 
     if args.load_from_raw:
         del gpdb, rawdb
+        del gputimer
 
     place_time = time.time() - total_start
     logger.info("GP Time: %.4f LG Time: %.4f DP Time: %.4f Total Place Time: %.4f" % (
