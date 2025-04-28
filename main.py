@@ -49,6 +49,19 @@ def get_option():
     parser.add_argument('--pseudo_weight', type=float, default=0, help='the weight of pseudo net')
     parser.add_argument('--visualize_cgmap', type=str2bool, default=False, help='visualize congestion map')
 
+    # timing opt params
+    parser.add_argument('--timing_opt', type=str2bool, default=True, help='perform timing optimization') 
+    parser.add_argument('--timing_freq', type=int, default=1, help='timing freq')
+    parser.add_argument('--calibration', type=str2bool, default=True, help='perform timer calibration') 
+    parser.add_argument('--calibration_step', type=float, default=0.1, help='')
+    parser.add_argument('--timing_start_iter', type=int, default=100, help='')
+    parser.add_argument('--timing_init_weight', type=float, default=0.05, help='')
+    parser.add_argument('--decay_factor', type=float, default=0.3, help='')
+    parser.add_argument('--decay_boost', type=float, default=3, help='')
+    parser.add_argument('--wire_resistance_per_micron', type=float, default=2.535, help='')
+    parser.add_argument('--wire_capacitance_per_micron', type=float, default=0.16e-15, help='')
+    parser.add_argument('--def_file', type=str, default="", help='placed def file')
+
     # detailed placement and evaluation
     parser.add_argument('--legalization', type=str2bool, default=True, help='perform lg') 
     parser.add_argument('--detail_placement', type=str2bool, default=True, help='perform dp') 
@@ -59,7 +72,7 @@ def get_option():
 
     # logging and saver
     parser.add_argument('--log_freq', type=int, default=100)
-    parser.add_argument('--verbose_cpp_log', type=str2bool, default=False, help='verbose cpp log for debugging')
+    parser.add_argument('--verbose_cpp_log', type=str2bool, default=True, help='verbose cpp log for debugging')
     parser.add_argument('--cpp_log_level', type=int, default=2, help='0: DEBUG, 1: VERBOSE, 2:INFO')
     parser.add_argument('--result_dir', type=str, default='result', help='log/model root directory') 
     parser.add_argument('--exp_id', type=str, default='', help='experiment id') 
@@ -69,7 +82,7 @@ def get_option():
 
     # placement output
     parser.add_argument('--draw_placement', type=str2bool, default=False, help='draw placement') 
-    parser.add_argument('--write_placement', type=str2bool, default=True, help='write placement result') 
+    parser.add_argument('--write_placement', type=str2bool, default=False, help='write placement result') 
     parser.add_argument('--write_global_placement', type=str2bool, default=False, help='write global placement result') 
     parser.add_argument('--output_dir', type=str, default="output", help='output directory') 
     parser.add_argument('--output_prefix', type=str, default="placement", help='prefix of placement output file') 
@@ -77,6 +90,7 @@ def get_option():
     args = parser.parse_args()
 
     args.exp_id = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S') + args.exp_id
+    args.exp_id = "{}_{}".format(args.exp_id, args.design_name)
 
     if args.dataset == "ispd2015":
         print("We haven't yet support fence region in ispd2015, use ispd2015_fix instead")
