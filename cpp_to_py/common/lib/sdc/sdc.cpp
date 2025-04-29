@@ -79,6 +79,8 @@ void SDC::read(const std::filesystem::path& path) {
         for (const auto& j : json) {
             if (const auto& c = j["command"]; c == "set_input_delay") {
                 commands.emplace_back(std::in_place_type_t<SetInputDelay>{}, j);
+            } else if (c == "set_driving_cell") {
+                commands.emplace_back(std::in_place_type_t<SetDrivingCell>{}, j);
             } else if (c == "set_input_transition") {
                 commands.emplace_back(std::in_place_type_t<SetInputTransition>{}, j);
             } else if (c == "set_output_delay") {
@@ -90,7 +92,7 @@ void SDC::read(const std::filesystem::path& path) {
             } else if (c == "set_units") {
                 commands.emplace_back(std::in_place_type_t<SetUnits>{}, j);
             } else {
-                logger.error("sdc command ", c, " not supported yet");
+                logger.error("sdc command %s not supported yet", c);
             }
         }
 
@@ -155,6 +157,37 @@ SetInputDelay::SetInputDelay(const Json& json) {
             logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
         } else {
             logger.error(command, ": ", std::quoted(key), " not supported");
+        }
+    }
+}
+
+// Constructor
+SetDrivingCell::SetDrivingCell(const Json& json) {
+    for (auto itr = json.begin(); itr != json.end(); ++itr) {
+        if (const auto& key = itr.key(); key == "-clock") {
+            clock = itr.value();
+        } else if (key == "-clock_fall") {
+            clock_fall.emplace();
+        } else if (key == "-lib_cell") {
+            // TODO: do nothing
+        } else if (key == "-pin") {
+            // TODO: do nothing
+        } else if (key == "-min") {
+            min.emplace();
+        } else if (key == "-max") {
+            max.emplace();
+        } else if (key == "-input_transition_fall") {
+            fall.emplace();
+            transitions[1] = std::stof(unquoted(itr.value()));
+        } else if (key == "-input_transition_rise") {
+            rise.emplace();
+            transitions[0] = std::stof(unquoted(itr.value()));
+        } else if (key == "port_list") {
+            port_list = parse_port(unquoted(itr.value()));
+        } else if (key == "command") {
+            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+        } else {
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }

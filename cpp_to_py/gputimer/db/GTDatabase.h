@@ -78,6 +78,7 @@ public:
     void readSpef(const std::string& file);
     void readSdc(sdc::SDC& sdc);
     void _read_sdc(sdc::SetInputDelay&);
+    void _read_sdc(sdc::SetDrivingCell&);
     void _read_sdc(sdc::SetInputTransition&);
     void _read_sdc(sdc::SetOutputDelay&);
     void _read_sdc(sdc::SetLoad&);

@@ -316,9 +316,13 @@ void GTDatabase::readSdc(sdc::SDC& sdc) {
     if (clocks.begin()->second.source_id() != -1) {
         int clock_pin_id = clocks.begin()->second.source_id();
         if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][0]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][0] = 0.0f;
-        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][1]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][1] = period / 2.0;
+        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][1]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][1] = 0.0f;
         if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][2]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][2] = 0.0f;
-        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][3]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][3] = period / 2.0;
+        if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][3]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][3] = 0.0f;
+        // if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][0]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][0] = 0.0f;
+        // if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][1]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][1] = period / 2.0;
+        // if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][2]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][2] = 0.0f;
+        // if (torch::isnan(timing_raw_db.pinAT[clock_pin_id][3]).item<bool>()) timing_raw_db.pinAT[clock_pin_id][3] = period / 2.0;
     }
 }
 
@@ -404,6 +408,38 @@ void GTDatabase::_read_sdc(sdc::SetInputTransition& obj) {
                                 if (auto itr = primary_input2pin_id.find(port); itr != primary_input2pin_id.end()) {
                                     for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
                                         float transition = *obj.transition;
+                                        if (sdc_time_unit.has_value()) transition = transition * *sdc_time_unit / time_unit;
+                                        timing_raw_db.pinSlew[itr->second][(el << 1) + rf] = transition;
+                                    }
+                                } else {
+                                    printf(obj.command, ": port ", std::quoted(port), " not found");
+                                }
+                            }
+                        },
+                        [](auto&&) { assert(false); }},
+               *obj.port_list);
+}
+
+// Sets input transition on pins or input ports relative to a clock signal.
+void GTDatabase::_read_sdc(sdc::SetDrivingCell& obj) {
+    assert((obj.transitions[0] || obj.transitions[1]) && obj.port_list);
+
+    auto mask = sdc::TimingMask(obj.min, obj.max, obj.rise, obj.fall);
+
+    std::visit(Functors{[&](sdc::AllInputs&) {
+                            for (auto& pi : primary_inputs) {
+                                for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
+                                    float transition = *obj.transitions[el];
+                                    if (sdc_time_unit.has_value()) transition = transition * *sdc_time_unit / time_unit;
+                                    timing_raw_db.pinSlew[pi][(el << 1) + rf] = transition;
+                                }
+                            }
+                        },
+                        [&](sdc::GetPorts& get_ports) {
+                            for (auto& port : get_ports.ports) {
+                                if (auto itr = primary_input2pin_id.find(port); itr != primary_input2pin_id.end()) {
+                                    for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
+                                        float transition = *obj.transitions[el];
                                         if (sdc_time_unit.has_value()) transition = transition * *sdc_time_unit / time_unit;
                                         timing_raw_db.pinSlew[itr->second][(el << 1) + rf] = transition;
                                     }

@@ -34,6 +34,7 @@ proc sdc_callback {cmd parsing_result} {
     set_input_delay -
     set_input_transition -
     set_output_delay -
+    set_driving_cell -
     set_clock_uncertainty -
     set_load -
     set_units { 

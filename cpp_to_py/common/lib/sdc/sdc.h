@@ -46,6 +46,22 @@ struct SetInputDelay {
     SetInputDelay(const Json&);
 };
 
+struct SetDrivingCell {
+    inline static constexpr auto command = "set_driving_cell";
+
+    std::string clock;
+    std::optional<std::byte> min;
+    std::optional<std::byte> max;
+    std::optional<std::byte> rise;
+    std::optional<std::byte> fall;
+    std::optional<std::byte> clock_fall;
+    std::array<std::optional<float>, 2> transitions;
+    std::optional<Object> port_list;
+
+    SetDrivingCell() = default;
+    SetDrivingCell(const Json&);
+};
+
 // Set a fixed transition on input or inout ports
 struct SetInputTransition {
     inline static constexpr auto command = "set_input_transition";
@@ -122,7 +138,7 @@ struct SetClockUncertainty {
     SetClockUncertainty(const Json&);
 };
 
-using Command = std::variant<SetUnits, SetInputDelay, SetInputTransition, SetOutputDelay, SetLoad, CreateClock>;
+using Command = std::variant<SetUnits, SetInputDelay, SetDrivingCell, SetInputTransition, SetOutputDelay, SetLoad, CreateClock>;
 
 struct SDC {
     std::vector<Command> commands;
