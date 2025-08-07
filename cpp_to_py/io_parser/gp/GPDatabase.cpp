@@ -51,6 +51,9 @@ void GPDatabase::addCellNode(index_type cell_id, std::string& node_type) {
     cell->gpdb_id = nodes.size() - 1;
 
     node_names.push_back(cell->name());
+
+    node_type_names.push_back(cell->ctype()->name);
+    node_celltype_index.push_back(cell->ctype()->libcell());
 }
 
 void GPDatabase::addIOPinNode(index_type iopin_id, std::string& node_type) {
@@ -664,6 +667,17 @@ torch::Tensor GPDatabase::getNodeSizeTensor() {
     return node_size;
 }
 
+torch::Tensor GPDatabase::getCelltypeSizeTensor() {
+    torch::Tensor celltype_size = torch::zeros({num_celltype, 2});
+    auto celltype_size_a = celltype_size.accessor<coord_type, 2>();
+
+    for (auto& celltype : database.celltypes) {
+        celltype_size_a[celltype->libcell()][0] = celltype->width;
+        celltype_size_a[celltype->libcell()][1] = celltype->height;
+    }
+    return celltype_size;
+}
+
 torch::Tensor GPDatabase::getPinRelLPosTensor() {
     // pin_pos == (node_pos - node_size / 2) + (pin_rel_lpos + pin_size / 2)
     torch::Tensor pin_rel_lpos = torch::zeros({num_pins, 2});
@@ -899,5 +913,15 @@ void GPDatabase::applyNodeLPos(torch::Tensor node_lpos) {
 }
 
 void GPDatabase::writePlacement(const std::string& given_prefix) { database.save(given_prefix); }
-
+void GPDatabase::writeNetlist(const std::string& given_prefix) { 
+    std::string filename;
+    if (given_prefix != "") {
+        filename = given_prefix;
+        filename += ".v";
+    } else {
+        filename = db::setting.OutputFile;
+    }
+ 
+    database.write_verilog(filename);
+}
 }  // namespace gp

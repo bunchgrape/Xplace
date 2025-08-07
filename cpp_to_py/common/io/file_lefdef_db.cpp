@@ -1559,6 +1559,11 @@ int readDefComponent(defrCallbackType_e c, defiComponent* co, defiUserData ud) {
     Database* db = (Database*)ud;
     CellType* celltype = db->getCellType(co->name());
 
+    // celltype name start with FILLCELL continue
+    if (celltype && celltype->name.find("FILLCELL") == 0) {
+        return 0;  // skip fill cells
+    }
+
     string cellName(co->id());
     cellName = validate_token(cellName);
     Cell* cell = db->addCell(cellName, celltype);

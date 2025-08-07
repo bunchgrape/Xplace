@@ -80,6 +80,8 @@ public:
 
     unordered_map<string, LutTemplate *> lut_templates_;
     unordered_map<string, LibertyCell *> lib_cells_;
+    unordered_map<size_t, vector<LibertyCell *>> lib_cells_hash_map_;
+
 
     LutTemplate *get_lut_template(const string &);
     LibertyCell *get_cell(const std::string &name);
@@ -112,7 +114,10 @@ public:
     vector<float> leakage_powers_;
     optional<float> leakage_power_;
     optional<float> area_;
+    size_t hash() const;
+    float average_delay();
 
+    size_t size_hash;
     bool is_seq_ = false;
     int num_bits_ = 0;
 
@@ -123,6 +128,13 @@ public:
 class LibertyPort {
 public:
     LibertyPort() = default;
+
+    std::string func_str_="";
+    size_t func_hash() {
+        size_t h = std::hash<std::string>()(func_str_);
+        h = h ^ std::hash<std::string>{}(name);
+        return h;
+    }
 
 public:
     string name;

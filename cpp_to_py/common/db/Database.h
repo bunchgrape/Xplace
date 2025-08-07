@@ -58,6 +58,11 @@ public:
     vector<ViaType*> viatypes;
     vector<CellType*> celltypes;
 
+    // robin_hood::unordered_map<int, vector<CellType*>> bit_to_celltypes;
+    std::unordered_map<int, vector<int>> bit_to_celltypes;
+    robin_hood::unordered_map<int, int> tray_sizes_used;
+    int num_cells;
+
     vector<Cell*> cells;
     vector<IOPin*> iopins;
     vector<Net*> nets;

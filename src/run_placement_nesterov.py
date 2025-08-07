@@ -109,6 +109,26 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
     torch.cuda.synchronize(device)
     gp_start_time = time.time()
     logger.info("start gp")
+    
+    bp()
+    gputimer.update_timing_eval(data.node_pos)
+    gputimer.report_timing_slack()
+
+    gputimer.timer.swap_gate_type(1200, 0)
+    gputimer.update_timing_eval(data.node_pos)
+    gputimer.report_timing_slack()
+    
+    gputimer.timer.swap_gate_type(124, 1)
+    gputimer.timer.swap_gate_type(3000, 2)
+    gputimer.update_timing_eval(data.node_pos)
+    gputimer.report_timing_slack()
+    
+    bp()
+    
+    for i in range(1000): gputimer.timer.swap_gate_type(i, 2)
+    gputimer.update_timing_eval(data.node_pos)
+    gputimer.report_timing_slack()
+    
 
     # def trace_handler(prof):
     #     print(prof.key_averages().table(
@@ -350,7 +370,7 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
                     wns_early, tns_early, wns_late, tns_late
                 )
             logger.info(log_str)
-            if args.draw_placement:
+            if args.draw_placement or terminate_signal:
                 info = (iteration, hpwl, data.design_name)
                 node_pos_to_draw = mov_node_pos[mov_lhs:mov_rhs, ...].clone()
                 node_size_to_draw = data.node_size[mov_lhs:mov_rhs, ...].clone()
@@ -496,14 +516,14 @@ def run_placement_main_nesterov(args, logger):
             wns_early_dp, tns_early_dp, wns_late_dp, tns_late_dp = timing_eval_func(node_pos)
         iteration += 1
 
-        # dump quality to csv
-        script_dir = os.path.join(args.result_dir, "quality.csv")
-        with open(script_dir, "a") as f:
-            if f.tell() == 0:
-                f.write("design_name,GP_HPWL,DP_HPWL, timing_init_weight, decay_factor, decay_boost, wns_late_dp, tns_late_dp\n")
-            f.write("%s,%.4E,%.4E,%.4f,%.4f,%.4f,%.4f,%.4f\n" % (
-                args.design_name, gp_hpwl, dp_hpwl, args.timing_init_weight, args.decay_factor, args.decay_boost, wns_late_dp, tns_late_dp
-            ))
+        # # dump quality to csv
+        # script_dir = os.path.join(args.result_dir, "quality.csv")
+        # with open(script_dir, "a") as f:
+        #     if f.tell() == 0:
+        #         f.write("design_name,GP_HPWL,DP_HPWL, timing_init_weight, decay_factor, decay_boost, wns_late_dp, tns_late_dp\n")
+        #     f.write("%s,%.4E,%.4E,%.4f,%.4f,%.4f,%.4f,%.4f\n" % (
+        #         args.design_name, gp_hpwl, dp_hpwl, args.timing_init_weight, args.decay_factor, args.decay_boost, wns_late_dp, tns_late_dp
+        #     ))
 
     route_metrics = None
     if ps.enable_route and args.final_route_eval:

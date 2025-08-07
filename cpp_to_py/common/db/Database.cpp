@@ -310,6 +310,44 @@ void Database::SetupCellLibrary() {
             }
         }
     }
+
+    for (auto& celltype : celltypes) {
+        if (celltype->liberty_cell) {
+            if (celltype->liberty_cell->num_bits_ > 0) {
+                // celltype name start with "DFF" ?
+                if (!celltype->name.find("DFFH") == 0) continue;
+                
+                bit_to_celltypes[celltype->liberty_cell->num_bits_].push_back(celltype->libcell());
+                std::cout << celltype->name << " ";
+                std::cout << "FF: " << celltype->liberty_cell->num_bits_ << " ";
+                std::cout << "\n";
+            }
+        }
+    }
+
+    for (auto& [bit, bit_celltypes] : bit_to_celltypes) {
+        // std::cout << "FF: " << bit << " ";
+        // smaller leakage power first
+        std::sort(bit_celltypes.begin(), bit_celltypes.end(), [&](const int a, const int b) {
+            if (!celltypes[a]->liberty_cell->leakage_power_) return false;
+            if (!celltypes[b]->liberty_cell->leakage_power_) return true;
+            return *celltypes[a]->liberty_cell->leakage_power_ < *celltypes[b]->liberty_cell->leakage_power_;
+        });
+        std::cout << "\n";
+    }
+
+    // printf area and power
+    std::cout << std::fixed << std::setprecision(3);
+    for (auto& [bit, bit_celltypes] : bit_to_celltypes) {
+        for (auto& celltype_index : bit_celltypes) {
+            std::cout << std::setw(25) << celltypes[celltype_index]->name << std::setw(15) << celltypes[celltype_index]->liberty_cell->num_bits_;
+            std::cout << std::setw(10) << "area: " << *celltypes[celltype_index]->liberty_cell->area_ << " ";
+            std::cout << std::setw(10) << "power: " << *celltypes[celltype_index]->liberty_cell->leakage_power_ << " ";
+            std::cout << std::setw(10) << "delay: " << celltypes[celltype_index]->liberty_cell->average_delay() << " ";
+            std::cout << "\n";
+        }
+    }
+
 }
 
 /*

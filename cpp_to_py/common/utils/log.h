@@ -63,6 +63,7 @@ class PrintfLogger {
     static constexpr bool write_log = false;
     FILE* f;
     bool tmp_verbose_parser_log = false;
+    // int _global_log_level = LOG_DEBUG;
     int _global_log_level = LOG_INFO;
 
 public:
@@ -157,6 +158,16 @@ public:
         }
     };
     template <typename... Args>
+    void infoif(bool flag, const char* format, Args&&... args) {
+        if (flag) {
+            if (sizeof...(args) != 0) {
+                log(LOG_INFO, format, args...);
+            } else {
+                log(LOG_INFO, format);
+            }
+        }
+    };
+    template <typename... Args>
     void notice(const char* format, Args&&... args) {
         if (sizeof...(args) != 0) {
             log(LOG_NOTICE, format, args...);
@@ -178,6 +189,16 @@ public:
             log(LOG_ERROR, format, args...);
         } else {
             log(LOG_ERROR, format);
+        }
+    };
+    template <typename... Args>
+    void errorif(bool flag, const char* format, Args&&... args) {
+        if (flag) {
+            if (sizeof...(args) != 0) {
+                log(LOG_INFO, format, args...);
+            } else {
+                log(LOG_INFO, format);
+            }
         }
     };
     template <typename... Args>

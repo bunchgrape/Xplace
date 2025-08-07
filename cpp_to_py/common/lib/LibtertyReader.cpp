@@ -281,6 +281,14 @@ LibertyPort* CellLib::extractLibertyPort(token_iterator& itr, const token_iterat
         } else if (*itr == "clock") {
             logger.infoif(++itr == end, "can't get the clock status in cellpin");
             cell_port->is_clock_ = (*itr == "true") ? true : false;
+        } else if (*itr == "function") {
+            if (*++itr == "(") {
+                itr = on_next_parentheses(itr, end, [&] (auto& func) mutable {
+                    cell_port->func_str_ += func;
+                });
+            } else {
+                cell_port->func_str_ = *itr;
+            }
         } else if (*itr == "timing") {
             TimingArc* timing_arc_ = extractTimingArc(itr, end, cell_port);
             bool test = true;
@@ -342,6 +350,7 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
         } else if (*itr == "bundle") {
             LibertyPort* cell_port_bundle = new LibertyPort();
             liberty_cell->ports_.push_back(cell_port_bundle);
+            std::queue<string> members;
             // liberty_cell->ports_map_[cell_port_bundle->name] = liberty_cell->ports_.size() - 1;
             cell_port_bundle->cell_ = liberty_cell;
             cell_port_bundle->is_bundle_ = true;
@@ -354,6 +363,11 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
                 if (*itr == "direction") {
                     logger.infoif(++itr == end, "can't get direction in cell ", liberty_cell->name);
                     cell_port_bundle->direction_ = findPortDirection(string(*itr));
+                } else if(*itr == "members") {
+                    itr = on_next_parentheses(itr, end, [&] (auto& name) mutable {
+                        members.push( std::string{name});
+                    });
+                    liberty_cell->num_bits_ = members.size();
                 } else if (*itr == "pin") {
                     LibertyPort* cell_port_ = extractLibertyPort(itr, end, liberty_cell);
                     cell_port_bundle->member_ports_.push_back(cell_port_);
@@ -536,6 +550,12 @@ void CellLib::finish_read() {
             lef_cell_type->liberty_cell = liberty_cell;
             liberty_cell->cell_type_ = lef_cell_type;
         }
+        if (!liberty_cell->leakage_power_) {
+            liberty_cell->leakage_power_ = default_values["default_cell_leakage_power"];
+            for (float power : liberty_cell->leakage_powers_) {
+                liberty_cell->leakage_power_ = std::max(*liberty_cell->leakage_power_, power);
+            }
+        }
         // sort port by name
         std::sort(liberty_cell->ports_.begin(),
                   liberty_cell->ports_.end(),
@@ -554,6 +574,7 @@ void CellLib::finish_read() {
             } else
                 finish_port_read(port);
         }
+        liberty_cell->num_bits_ = liberty_cell->num_bits_ ? liberty_cell->num_bits_ : liberty_cell->is_seq_;
 
         // if (liberty_cell->is_seq_) {
         for (auto port : liberty_cell->ports_) {
@@ -570,11 +591,17 @@ void CellLib::finish_read() {
                 port->timing_arcs_non_cond_non_bundle_.push_back(timing_arc);
             }
         }
+        
+        liberty_cell->size_hash = liberty_cell->hash();
+        lib_cells_hash_map_[liberty_cell->size_hash].push_back(liberty_cell);
+    }
 
-        if (name == "DFFLQNx2_ASAP7_75t_R") {
-            bool debug = true;
+
+    for (auto& [hash, liberty_cells] : lib_cells_hash_map_) {
+        for (auto& liberty_cell : liberty_cells) {
+            std::cout << liberty_cell->name << "\n";
         }
-        // }
+        std::cout << "==============================\n";
     }
 }
 

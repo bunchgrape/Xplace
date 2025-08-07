@@ -54,6 +54,8 @@ public:
     tuple<torch::Tensor, torch::Tensor> report_criticality(int K, bool verbose = false, bool deterministic = true);
     tuple<torch::Tensor, torch::Tensor> report_criticality_threshold(float thrs, bool verbose = false, bool deterministic = true);
 
+    void swap_gate_type(int idx, int index);
+
 public:
     float time_unit() const;
 

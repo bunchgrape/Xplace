@@ -34,6 +34,43 @@ bool GTDatabase::is_redundant_timing(const TimingArc* timing_arc, Split el) {
     return false;
 }
 
+void GTDatabase::swap_gate_type(int node_id, int type_index) {
+    int libcell_id = rawdb.cells[gpdb.getNodes()[node_id].getOriDBId()]->ctype()->libcell();
+    size_t type_hash = rawdb.celltypes[libcell_id]->liberty_cell->size_hash;
+    vector<LibertyCell*>& liberty_cells = rawdb.cell_libs_[MIN]->lib_cells_hash_map_[type_hash];
+    if (type_index >= liberty_cells.size()) {
+        logger.error("GTDatabase::swap_gate_type: type_index {} is out of range for type_hash {} with size {}", type_index, type_hash, liberty_cells.size());
+        return;
+    }
+    int change_libcell_id = liberty_cells[type_index]->cell_type_->libcell();
+
+    for_each_el(el) {
+        for (int pin_id : gpdb.getNodes()[node_id].pins()) {
+            int pin_id2port_start = liberty_cell_type2port_list_end[change_libcell_id];
+            int pin_id2port_offset = pin_id2port_offset_id[pin_id];
+            int port_id = pin_id2port_start + pin_id2port_offset;
+            std::cout << "swap gate type for node " << node_id << " name:" <<
+                    rawdb.celltypes[libcell_id]->name <<":"<<
+                    rawdb.celltypes[libcell_id]->liberty_cell->ports_[pin_id2port_offset]->name << " to " <<
+                    rawdb.celltypes[change_libcell_id]->name << ":" <<
+                    rawdb.celltypes[change_libcell_id]->liberty_cell->ports_[pin_id2port_offset]->name << "\n";
+            int start = liberty_port2timing_list_end[2 * port_id + el];
+            int timing_id_start = pin_id2timing_arc_list_start[2 * pin_id + el];
+            int timing_id_end = pin_id2timing_arc_list_end[2 * pin_id + el];
+            for (int i = timing_id_start; i < timing_id_end; i++) {
+                if (timing_arc_id_map[i] == -1) continue;  // skip if timing arc is not found
+                int arc_id_non_el = i / 2;
+                int in_port_id = timing_arc_in_port_id[arc_id_non_el];
+                std::cout << "timing arc id " << 
+                timing_arc_id_map[i] << " -> " <<
+                start + in_port_id << "\n";
+                timing_arc_id_map[i] = start + in_port_id;
+                timing_raw_db.timing_arc_id_map[i] = start + in_port_id;
+            }
+        }
+    }
+}
+
 GTDatabase::GTDatabase(shared_ptr<db::Database> rawdb_, shared_ptr<gp::GPDatabase> gpdb_, shared_ptr<TimingTorchRawDB> timing_raw_db_) : rawdb(*rawdb_), gpdb(*gpdb_), timing_raw_db(*timing_raw_db_) {
     cell_libs_[MIN] = rawdb.cell_libs_[MIN];
     cell_libs_[MAX] = rawdb.cell_libs_[MAX];
@@ -150,6 +187,7 @@ void GTDatabase::ExtractTimingGraph() {
             auto [from_pin, to_pin] = connect_from_to_pin(driver_pin_id, sink_pin_id);
             timing_arc_id_map.push_back(-1);
             timing_arc_id_map.push_back(-1);
+            timing_arc_in_port_id.push_back(-1);
             arc_types.push_back(0);
             arc_id2test_id.push_back(-1);
             num_arcs++;
@@ -157,6 +195,8 @@ void GTDatabase::ExtractTimingGraph() {
     }
 
     cell_node_type_map.resize(gpdb.getNodes().size(), -1);
+    pin_id2timing_arc_list_start.resize(2 * num_pins, 0);
+    pin_id2timing_arc_list_end.resize(2 * num_pins, 0);
     for (auto& dbcell : rawdb.cells) {
         int gpdb_id = dbcell->gpdb_id;
         int libcell_id = dbcell->ctype()->libcell();
@@ -169,6 +209,7 @@ void GTDatabase::ExtractTimingGraph() {
         }
         for_each_el(el) {
             for (int pin_id : gpdb.getNodes()[gpdb_id].pins()) {
+                pin_id2timing_arc_list_start[2 * pin_id + el] = timing_arc_id_map.size();
                 int pin_id2port_start = liberty_cell_type2port_list_end[libcell_id];
                 int pin_id2port_offset = pin_id2port_offset_id[pin_id];
                 int port_id = pin_id2port_start + pin_id2port_offset;
@@ -191,6 +232,7 @@ void GTDatabase::ExtractTimingGraph() {
                     auto [from_pin, to_pin] = connect_from_to_pin(from_pin_id, to_pin_id);
                     timing_arc_id_map.push_back(timing_view[MIN]);
                     timing_arc_id_map.push_back(timing_view[MAX]);
+                    timing_arc_in_port_id.push_back(i - start);
                     arc_types.push_back(1);
                     num_arcs++;
 
@@ -202,6 +244,7 @@ void GTDatabase::ExtractTimingGraph() {
                         arc_id2test_id.push_back(-1);
                     }
                 }
+                pin_id2timing_arc_list_end[2 * pin_id + el] = timing_arc_id_map.size();
             }
         }
     }

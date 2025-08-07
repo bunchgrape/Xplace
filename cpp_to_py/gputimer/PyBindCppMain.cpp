@@ -60,6 +60,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("report_K_path", &gt::GPUTimer::report_K_path, py::return_value_policy::copy)
         .def("report_criticality", &gt::GPUTimer::report_criticality, py::return_value_policy::copy)
         .def("report_criticality_threshold", &gt::GPUTimer::report_criticality_threshold, py::return_value_policy::copy)
+        // Incr
+        .def("swap_gate_type", &gt::GPUTimer::swap_gate_type)
         ;
     pybind11::class_<gt::TimingTorchRawDB, std::shared_ptr<gt::TimingTorchRawDB>>(m, "TimingTorchRawDB")
         .def(pybind11::init<torch::Tensor,

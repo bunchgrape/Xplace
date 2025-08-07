@@ -86,6 +86,9 @@ public:
     void _read_sdc(sdc::SetUnits&);
     bool is_redundant_timing(const TimingArc* timing_arc, Split el);
 
+    // Incremental update
+    void swap_gate_type(int node_id, int index);
+
     // Units
     float res_unit;
     float cap_unit;
@@ -129,6 +132,8 @@ public:
 
     vector<int> timing_arc_from_pin_id, timing_arc_to_pin_id;
     vector<int> timing_arc_id_map;
+    vector<int> timing_arc_in_port_id;
+    vector<int> pin_id2timing_arc_list_start, pin_id2timing_arc_list_end;
     vector<int> arc_types, arc_id2test_id;
     vector<int> test_id2_arc_id;
     vector<int> net_is_clock;
