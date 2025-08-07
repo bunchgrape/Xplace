@@ -168,8 +168,6 @@ def global_placement_main(gpdb, rawdb, ps: ParamScheduler, data: PlaceData, args
 
         # Perform timing-opt.
         if args.timing_opt and iteration > args.timing_start_iter and iteration % 1 == 0:
-            if not ps.enable_timing:
-                logger.info("timing_pin_weight %s")
             ps.enable_timing = True
             node_pos = torch.cat([mov_node_pos[mov_lhs:mov_rhs].clone(), data.node_pos[mov_rhs:]], dim=0)
             
@@ -472,58 +470,30 @@ def run_placement_main_nesterov(args, logger):
 
     ps = ParamScheduler(data, args, logger)
 
-
-
-    # timing_init_weight = [0.04, 0.05]
-    # decay_factor = [0.4, 0.2, 0.3]
-    # decay_boost = [2, 3, 4]
-
-    # # timing_init_weight = [0.04]
-    # # decay_factor = [0.4]
-    # # decay_boost = [2]
-
-    # for (i, j, k) in itertools.product(timing_init_weight, decay_factor, decay_boost):
-    #     args.timing_init_weight = i
-    #     args.decay_factor = j
-    #     args.decay_boost = k
-    if True:
-        gputimer = None
-        if args.timing_opt:        
-            gputimer = GPUTimer(data, rawdb, gpdb, params, args)
-            data.gputimer = gputimer
-            def timing_eval_func(node_pos):
-                gputimer.update_timing_eval(node_pos)
-                wns_early, tns_early, wns_late, tns_late = gputimer.report_timing_slack()
-                logger.info("early WNS/TNS: %.4f/%.4f (ns) | late WNS/TNS: %.4f/%.4f (ns)" % (wns_early, tns_early, wns_late, tns_late))
-                return wns_early, tns_early, wns_late, tns_late
+    gputimer = None
+    if args.timing_opt:        
+        gputimer = GPUTimer(data, rawdb, gpdb, params, args)
+        data.gputimer = gputimer
+        def timing_eval_func(node_pos):
+            gputimer.update_timing_eval(node_pos)
+            wns_early, tns_early, wns_late, tns_late = gputimer.report_timing_slack()
+            logger.info("early WNS/TNS: %.4f/%.4f (ns) | late WNS/TNS: %.4f/%.4f (ns)" % (wns_early, tns_early, wns_late, tns_late))
+            return wns_early, tns_early, wns_late, tns_late
             
+    # global placement
+    node_pos, iteration, gp_hpwl, overflow, gp_time, gp_per_iter = global_placement_main(
+        gpdb, rawdb, ps, data, args, logger, params, gputimer
+    )
+    if args.timing_opt:
+        wns_early_gp, tns_early_gp, wns_late_gp, tns_late_gp = timing_eval_func(node_pos)
 
-        set_random_seed(args)
-        ps = ParamScheduler(data, args, logger)
-
-        # global placement
-        node_pos, iteration, gp_hpwl, overflow, gp_time, gp_per_iter = global_placement_main(
-            gpdb, rawdb, ps, data, args, logger, params, gputimer
-        )
-        if args.timing_opt:
-            wns_early_gp, tns_early_gp, wns_late_gp, tns_late_gp = timing_eval_func(node_pos)
-
-        # detail placement
-        node_pos, dp_hpwl, top5overflow, lg_time, dp_time = detail_placement_main(
-            node_pos, gpdb, rawdb, ps, data, args, logger
-        )
-        if args.timing_opt:
-            wns_early_dp, tns_early_dp, wns_late_dp, tns_late_dp = timing_eval_func(node_pos)
-        iteration += 1
-
-        # # dump quality to csv
-        # script_dir = os.path.join(args.result_dir, "quality.csv")
-        # with open(script_dir, "a") as f:
-        #     if f.tell() == 0:
-        #         f.write("design_name,GP_HPWL,DP_HPWL, timing_init_weight, decay_factor, decay_boost, wns_late_dp, tns_late_dp\n")
-        #     f.write("%s,%.4E,%.4E,%.4f,%.4f,%.4f,%.4f,%.4f\n" % (
-        #         args.design_name, gp_hpwl, dp_hpwl, args.timing_init_weight, args.decay_factor, args.decay_boost, wns_late_dp, tns_late_dp
-        #     ))
+    # detail placement
+    node_pos, dp_hpwl, top5overflow, lg_time, dp_time = detail_placement_main(
+        node_pos, gpdb, rawdb, ps, data, args, logger
+    )
+    if args.timing_opt:
+        wns_early_dp, tns_early_dp, wns_late_dp, tns_late_dp = timing_eval_func(node_pos)
+    iteration += 1
 
     route_metrics = None
     if ps.enable_route and args.final_route_eval:
@@ -545,5 +515,7 @@ def run_placement_main_nesterov(args, logger):
     logger.info("GP Time: %.4f LG Time: %.4f DP Time: %.4f Total Place Time: %.4f" % (
         gp_time, lg_time, dp_time, place_time))
     place_metrics = (dp_hpwl, gp_hpwl, top5overflow, overflow, gp_time, dp_time + lg_time, gp_per_iter, place_time)
+    if args.timing_opt:
+        place_metrics += (wns_early_dp, tns_early_dp, wns_late_dp, tns_late_dp)
 
     return place_metrics, route_metrics

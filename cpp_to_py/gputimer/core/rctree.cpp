@@ -53,15 +53,13 @@ void GPUTimer::update_rc_timing(torch::Tensor node_lpos, bool record, bool load,
                           cf,
                           rf);
     if (record) {
-        // auto ratio = torch::nan_to_num(gtdb.pinLoad_ref, 1.0) / torch::nan_to_num(gtdb.pinLoad, 1.0);
         auto ratio_load = torch::nan_to_num(timing_raw_db.pinLoad_ref / timing_raw_db.pinLoad, 1.0);
         timing_raw_db.pinLoad_ratio.data().copy_(ratio_load.contiguous().data());
-        // auto ratio_delay = torch::nan_to_num(timing_raw_db.pinRootDelay_ref / timing_raw_db.pinRootDelay, 1.0);
         auto ratio_delay = torch::sqrt(torch::nan_to_num(timing_raw_db.pinRootDelay_ref / timing_raw_db.pinRootDelay, 1.0));
         timing_raw_db.pinRootDelay_ratio.data().copy_(ratio_delay.contiguous().data());
 
-        auto gap_delay = (torch::nan_to_num(timing_raw_db.pinRootDelay_ref - timing_raw_db.pinRootDelay, 0)).clamp(0.0);
-        timing_raw_db.pinRootDelay_compensation.data().copy_(gap_delay.contiguous().data());
+        auto delay_comp = (torch::nan_to_num(timing_raw_db.pinRootDelay_ref - timing_raw_db.pinRootDelay, 0)).clamp(0.0);
+        timing_raw_db.pinRootDelay_compensation.data().copy_(delay_comp.contiguous().data());
     }
     if (load) {
         timing_raw_db.pinImpulse.data().copy_(timing_raw_db.pinImpulse_ref.data());
@@ -409,24 +407,19 @@ void GPUTimer::update_rc_timing_spef() {
             int in_net_idx = flat_net2pin_map[std::distance(gtdb.pin_names.begin(), itr)] - flat_net2pin_start_map[net_idx];
             net_id2node_cap[net_idx][in_net_idx] = cap * spef_cap_ratio;
             node_name2node_id_map[net_idx][node_name] = in_net_idx;
-            // std::cout << "pin " << node_name << " index " << in_net_idx << " cap " << cap << std::endl;
         } else {
             net_id2node_cap[net_idx].push_back(cap * spef_cap_ratio);
             node_name2node_id_map[net_idx][node_name] = net_id2node_cap[net_idx].size() - 1;
             net_id2node2pin_map[net_idx].push_back(-1);
-            // std::cout << "pin " << node_name << " not found " << cap << std::endl;
         }
     };
     for (const auto& n : spef.nets) {
         string net_name = n.name;
         net_name = validate_token(net_name);
         if (auto itr = std::find(gtdb.net_names.begin(), gtdb.net_names.end(), net_name); itr == gtdb.net_names.end()) {
-            // logger.error("spef net ", net_name.c_str(), " not found");
             continue;
         } else {
-            // logger.info("net %s found", net_name.c_str());
             int net_idx = std::distance(gtdb.net_names.begin(), itr);
-
 
             // Put pin nodes in the front
             for (int j = 0; j < flat_net2pin_start_map[net_idx + 1] - flat_net2pin_start_map[net_idx]; ++j) {
@@ -454,8 +447,6 @@ void GPUTimer::update_rc_timing_spef() {
                 net_id2edge_from[net_idx].push_back(from);
                 net_id2edge_to[net_idx].push_back(to);
                 net_id2edge_res[net_idx].push_back(value * spef_res_ratio);
-                // printf("net %s edge %s %s %f\n", net_name.c_str(), node1.c_str(), node2.c_str(), value);
-                // printf("net %s edge %d %d %f\n", net_name.c_str(), from, to, value);
             }
         }
     }
@@ -508,10 +499,6 @@ void GPUTimer::update_rc_timing_spef() {
         flat_net2edge_start_map.push_back(num_edges);
     }
 
-    // float total_res = std::accumulate(edge_res.begin(), edge_res.end(), 0.0);
-    // float total_cap = std::accumulate(node_cap.begin(), node_cap.end(), 0.0);
-    // logger.info(" ================= total_res: %.5E ================= ", total_res);
-    // logger.info(" ================= total_cap: %.5E ================= ", total_cap);
     auto device = timing_raw_db.node_size.device();
     torch::Tensor edge_res = torch::from_blob(edge_res_vec.data(), {num_edges}, torch::dtype(torch::kFloat32)).contiguous().to(device);
     torch::Tensor node_cap = torch::from_blob(node_cap_vec.data(), {num_nodes * NUM_ATTR}, torch::dtype(torch::kFloat32)).contiguous().to(device);

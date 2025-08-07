@@ -70,9 +70,6 @@ __device__ void propagateDelay(index_type arc_id,
         int timing_id = timing_arc_id_map[arc_id * 2 + el];
         float delay = d_allocator->query(timing_id, irf, orf, si, lc, 0);
         if (isnan(delay)) return;
-        // if (delay < 0) {
-        //     printf("pin %d arc %d delay %.5f si %.5f lc %.5f\n", to_pin_id, arc_id, delay, si, lc);
-        // }
         arcDelay[arc_id * 2 * NUM_ATTR + i] = delay;
     }
 }
@@ -134,7 +131,6 @@ __device__ void propagateTest(index_type arc_id,
         const int fel_rf = (fel << 1) + frf;
         if (isnan(pinAt[from_pin_id * NUM_ATTR + fel_rf]) || isnan(pinSlew[from_pin_id * NUM_ATTR + fel_rf])) return;
 
-        // printf("at %.5f clock %.5f\n", pinAt[from_pin_id * NUM_ATTR + fel_rf], clock_period);
         if (el == 0) {
             testRelatedAT[test_id * NUM_ATTR + i] = pinAt[from_pin_id * NUM_ATTR + fel_rf];
         } else {
@@ -152,8 +148,6 @@ __device__ void propagateTest(index_type arc_id,
                 pinRat[to_pin_id * NUM_ATTR + i] = testRelatedAT[test_id * NUM_ATTR + i] - testConstraint[test_id * NUM_ATTR + i];
             }
             testRAT[test_id * NUM_ATTR + i] = pinRat[to_pin_id * NUM_ATTR + i];
-            // printf("assigning el %d rf %d %f to test %d\n", el, rf, pinRat[to_pin_id * NUM_ATTR + i], test_id);
-            // printf("pin %d AT %.5f - Constraint %.5f = RAT %.5f\n", to_pin_id, testRelatedAT[test_id * NUM_ATTR + i], testConstraint[test_id * NUM_ATTR + i], pinRat[to_pin_id * NUM_ATTR + i]);
         }
     }
 }
@@ -238,7 +232,6 @@ __device__ void propagateRAT(index_type arc_id,
         } else {
             if (!d_allocator->is_transition_defined(timing_id, irf, orf)) return;
             if (el == 0) {
-                // fel = MAX
                 const int fel_rf = 2 + irf;
                 const int tel_rf = orf;
                 float at = pinAt[from_pin_id * NUM_ATTR + fel_rf];
@@ -247,7 +240,6 @@ __device__ void propagateRAT(index_type arc_id,
                 float rat = at + slack;
                 from_rats[threadIdx.x] = rat;
             } else {
-                // fel = MIN
                 const int fel_rf = irf;
                 const int tel_rf = 2 + orf;
                 float at = pinAt[from_pin_id * NUM_ATTR + fel_rf];
@@ -307,40 +299,23 @@ __global__ void propagatePinBack(index_type *level_list,
                     int tel_rf = ((i & 0b100) >> 1) + (i & 1);
                     int irf = fel_rf & 1;
                     int orf = tel_rf & 1;
-                    // if (timing_arc_id_map[arc_id * 2 + el] == -1) continue;
                     int timing_id = timing_arc_id_map[arc_id * 2 + el];
                     float rat = from_rats[ti];
                     if (!d_allocator->d_is_constraint[timing_id]) {
                         if (isnan(pinRat[from_pin_id * NUM_ATTR + fel_rf]) || ((pinRat[from_pin_id * NUM_ATTR + fel_rf] < rat) ^ el)) {
-                            // if (from_pin_id == 2467954) {
-                            //     printf("i %d, old rat %.5f, new rat %.5f\n", i, pinRat[from_pin_id * NUM_ATTR +
-                            //     fel_rf], rat);
-                            // }
                             atomicExch(&pinRat[from_pin_id * NUM_ATTR + fel_rf], rat);
                         }
                     } else {
                         if (el == 0) {
-                            // fel = MAX
                             const int fel_rf = 2 + irf;
                             const int tel_rf = orf;
                             if (isnan(pinRat[from_pin_id * NUM_ATTR + fel_rf]) || (pinRat[from_pin_id * NUM_ATTR + fel_rf] > rat)) {
-                                // if (from_pin_id == 2467954) {
-                                //     printf("i %d, el %d, felrf %d, telrf %d, old rat %.5f, new rat %.5f\n", i, el,
-                                //     fel_rf, tel_rf, pinRat[from_pin_id * NUM_ATTR + fel_rf], rat);
-                                // }
-                                // pinRat[from_pin_id * NUM_ATTR + fel_rf] = rat;
                                 atomicExch(&pinRat[from_pin_id * NUM_ATTR + fel_rf], rat);
                             }
                         } else {
-                            // fel = MIN
                             const int fel_rf = irf;
                             const int tel_rf = 2 + orf;
                             if (isnan(pinRat[from_pin_id * NUM_ATTR + fel_rf]) || (pinRat[from_pin_id * NUM_ATTR + fel_rf] < rat)) {
-                                // if (from_pin_id == 2467954) {
-                                //     printf("i %d, el %d, felrf %d, telrf %d, old rat %.5f, new rat %.5f\n", i, el,
-                                //     fel_rf, tel_rf, pinRat[from_pin_id * NUM_ATTR + fel_rf], rat);
-                                // }
-                                // pinRat[from_pin_id * NUM_ATTR + fel_rf] = rat;
                                 atomicExch(&pinRat[from_pin_id * NUM_ATTR + fel_rf], rat);
                             }
                         }
@@ -379,7 +354,6 @@ void update_timing_cuda(index_type *level_list,
                         GPULutAllocator *d_allocator,
                         int num_pins,
                         bool deterministic) {
-    // for (int i = 1; i < 3; i++) {
     for (int i = 1; i < level_list_end_cpu.size() - 1; i++) {
         int num_pins_level = level_list_end_cpu[i + 1] - level_list_end_cpu[i];
         index_type level_start_offset = level_list_end_cpu[i];
@@ -411,7 +385,6 @@ void update_timing_cuda(index_type *level_list,
 
         cudaDeviceSynchronize();
     }
-    // device_copy<float><<<1, 1>>>(pinAt, pin_arrival_time, num_pins * NUM_ATTR);
     cudaDeviceSynchronize();
 
     for (int i = level_list_end_cpu.size() - 3; i >= 0; i--) {
@@ -441,7 +414,6 @@ void update_timing_cuda(index_type *level_list,
 
         cudaDeviceSynchronize();
     }
-    // device_copy<float><<<1, 1>>>(pinRat, pin_required_arrival_time, num_pins * NUM_ATTR);
     cudaDeviceSynchronize();
 }
 

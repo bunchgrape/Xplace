@@ -2,7 +2,6 @@ import torch
 from .database import PlaceData
 from cpp_to_py import density_map_cuda
 from .core import merged_wl_loss_grad, merged_wl_loss_grad_timing
-from pdb import set_trace as bp
 
 def get_init_density_map(rawdb, gpdb, data: PlaceData, args, logger, ps=None):
     lhs, rhs = data.fixed_index
@@ -166,7 +165,6 @@ def init_params(
         # timing mode fluctuation, larger divergence life
         ps.max_life = 50
         ps.life = ps.max_life
-        print("Timing weight: %.4f" % ps.timing_wl_weight)
 
 # Nesterove learning rate initialization
 def estimate_initial_learning_rate(obj_and_grad_fn, constraint_fn, x_k, lr):

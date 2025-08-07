@@ -95,8 +95,6 @@ void GTDatabase::ExtractTimingGraph() {
     net_names = gpdb.getNetNames();
     
     //  Flatten Liberty Cell Timing
-    //
-    // write to tmp.log
     for (db::CellType* cell_type : rawdb.celltypes) {
         string cell_type_name = cell_type->name;
         array<LibertyCell*, 2> liberty_cell_view = {cell_libs_[MIN]->get_cell(cell_type_name), cell_libs_[MAX]->get_cell(cell_type_name)};
@@ -335,7 +333,7 @@ void GTDatabase::readSdc(sdc::SDC& sdc) {
     // string clock_name = clocks.begin()->second.source_name();
     string clock_name = gpdb.getPins()[clocks.begin()->second.source_id()].getName();
     float period = clocks.begin()->second.period();
-    logger.info("clock: %s, period: %.2f\n", clock_name.c_str(), period);
+    logger.info("clock: %s, period: %.2f", clock_name.c_str(), period);
 
     net_is_clock.resize(gpdb.getNets().size(), 0);
     for (auto& gpnet : gpdb.getNets()) {
@@ -407,7 +405,6 @@ void GTDatabase::_read_sdc(sdc::SetInputDelay& obj) {
     std::visit(Functors{[&](sdc::AllInputs&) {
                             for (auto& pi : primary_inputs) {
                                 for_each_el_rf_if(el, rf, (mask | el) && (mask | rf)) {
-                                    // pinAT[pi * NUM_ATTR + (el << 1) + rf] = *obj.delay_value;
                                     float delay = *obj.delay_value;
                                     if (sdc_time_unit.has_value()) delay = delay * *sdc_time_unit / time_unit;
                                     timing_raw_db.pinAT[pi][(el << 1) + rf] = delay;

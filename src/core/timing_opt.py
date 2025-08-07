@@ -2,7 +2,6 @@ import torch
 from cpp_to_py import gputimer, wirelength_timing_cuda
 from src.param_scheduler import MetricRecorder
 from utils import *
-from pdb import set_trace as bp
 
 class GPUTimer():
     def __init__(self, data, rawdb, gpdb, params, args):
@@ -63,7 +62,6 @@ class GPUTimer():
         self.timer.levelize()
         self.pin_slack = torch.zeros(data.num_pins, dtype=torch.float32, device=data.device)
         self.timing_pin_weight = torch.ones(data.num_pins, dtype=torch.float32, device=data.device)
-        # self.history_x = self.timing_pin_weight.clone()
         self.history_x = None
         
         self.tns_record = []
@@ -119,14 +117,14 @@ class GPUTimer():
             self.timer.update_rc(node_lpos, False, True, True)
         self.timer.update_timing()
         
+    def update_timing_spef(self):
+        self.timer.update_states()
+        self.timer.update_rc_spef()
+        self.timer.update_timing()
         
     def report_timing_slack(self):
         time_unit = self.timer.time_unit()
         self.timer.update_endpoints()
-        # wns_early = self.timer.report_wns(0) / (time_unit * 1e15)
-        # wns_late  = self.timer.report_wns(1) / (time_unit * 1e15)
-        # tns_early = self.timer.report_tns_elw(0) / (time_unit * 1e17)
-        # tns_late  = self.timer.report_tns_elw(1) / (time_unit * 1e17)
         wns_early, tns_early, wns_late, tns_late = self.timer.report_wns_and_tns()
         wns_early = (wns_early.item() * (time_unit * 1e9))
         wns_late = (wns_late.item() * (time_unit * 1e9))
@@ -140,7 +138,6 @@ class GPUTimer():
         return self.pin_slack
     
     def report_path(self, ep_name=None, el = -1, verbose=False):
-        at1 = self.timer.report_pin_at()
         if ep_name is not None:
             ep_idx = self.pin_names.index(ep_name)
             path, at, delay = self.timer.report_path(ep_idx, el, verbose)
@@ -167,23 +164,6 @@ class GPUTimer():
     def report_slack(self, pin_name):
         pin_idx = self.pin_names.index(pin_name)
         return self.timer.report_pin_slack()[pin_idx]
-    
-    def path_dist(self, pin_pos, path):
-        dist = 0
-        for i in range(len(path) - 1): dist += torch.dist(pin_pos[path[i]], pin_pos[path[i+1]], p=1)
-        return dist
-
-    def test_node_slack(self):
-        pin_slacks, _ = torch.min((torch.nan_to_num(self.report_pin_slack()) * (1e-9 / self.timer.time_unit())).clamp(max=0), 1)
-        endpoints_index = self.timer.endpoints_index().long()
-        endpoints_index = torch.unique(endpoints_index)
-        ep_id2node_id = self.data.pin_id2node_id[endpoints_index]
-        ep_slacks = pin_slacks[endpoints_index]
-        node_slacks = torch.zeros(self.node_weight.size(0), dtype=torch.float32, device=self.data.device)
-        node_slacks.scatter_add_(0, ep_id2node_id, ep_slacks)
-        node_slacks_mask = node_slacks > ep_slacks.min() * 0.95
-        return node_slacks_mask
-    
     def get_node_critocality(self):
         pin_slacks, _ = torch.min((torch.nan_to_num(self.report_pin_slack()) * (1e-9 / self.timer.time_unit())).clamp(max=0), 1)
         endpoints_index = self.timer.endpoints_index().long()
@@ -196,7 +176,6 @@ class GPUTimer():
         return node_critocality
 
     def step(self, ps, node_pos, data):
-        # slacks, _ = torch.min((torch.nan_to_num(self.report_pin_slack()) - self.target_wns * (1e-9 / self.timer.time_unit())).clamp(max=0), 1)
         slacks, _ = torch.min(torch.nan_to_num(self.report_pin_slack()).clamp(max=0), 1)
         delay_k, _ = self.timer.report_criticality_threshold(0.75, False, True)
         delay_1, pin_visited = self.timer.report_criticality_threshold(0.99, False, True)
@@ -211,9 +190,6 @@ class GPUTimer():
         x_wns = torch.tensor(self.wns_max[-window:], dtype=torch.float32)
         x_delay_k = torch.tensor(self.delay_K_max[-window:], dtype=torch.float32)
         x_delay_1 = torch.tensor(self.delay_1_max[-window:], dtype=torch.float32)
-        # wns_mean = torch.mean(x_wns)
-        # delay_k_mean = torch.mean(x_delay_k)
-        # delay_1_mean = torch.mean(x_delay_1)
         wns_mean = x_wns[-1]
         delay_k_mean = x_delay_k[-1]
         delay_1_mean = x_delay_1[-1]
@@ -222,7 +198,6 @@ class GPUTimer():
         pin_weight += (delay_k / delay_k_mean.clamp(min=1)) * self.beta * 2
         pin_weight += torch.pow(2, (delay_1 / delay_1_mean.clamp(min=1))) * pin_visited.clamp(max=1)
         
-        ## ==============================
         w_0 = pin_weight
         delta_w_0 = None
         delta_w_1 = None
@@ -235,21 +210,15 @@ class GPUTimer():
             decay = (self.decay * torch.pow(5, delta_w_0.clamp(min=0)) / self.decay_boost).clamp(max=0.5)
         else:
             decay = 1
-        
-        # decay = self.decay
             
         self.w_2 = self.w_1
         self.w_1 = pin_weight.clone()
-        
-        # ==============================
         if self.history_x is None:
             self.history_x = self.timing_pin_weight.clone()
         self.timing_pin_weight = pin_weight.clamp(min=ps.timing_wl_weight)
         self.timing_pin_weight = (decay * self.timing_pin_weight + (1 - decay) * self.history_x) * self.global_weight
         self.timing_pin_weight = self.timing_pin_weight.contiguous().to(node_pos.device)
         self.history_x = self.timing_pin_weight.clone()
-        
-        # self.global_weight = min(1, self.global_weight + 0.002)
         
     def push_metric(self, wns, tns):
         metrics_dict = {

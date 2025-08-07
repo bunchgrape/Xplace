@@ -8,16 +8,6 @@ using std::vector;
 
 namespace gt {
 
-// class GPULut {
-// public:
-//     // int num_x, num_y, num_table;
-//     // size_t x_offset, y_offset, table_offset;
-//     bool allocated = false;
-//     GPULut() = default;
-//     __host__ GPULut(bool allocated_) : allocated(allocated_) { ; }
-//     __host__ ~GPULut(){};
-// };
-
 template <typename T>
 __device__ int lower_bound(T *arr, int size, T val) {
     int l = 0, r = size - 1;
@@ -96,7 +86,6 @@ public:
                 timing_sense[num_timings] = static_cast<int>(timing.timing_sense_);
             else
                 timing_sense[num_timings] = -1;
-            // printf("%d %d %d\n", is_rising_edge_triggered[num_timings], is_falling_edge_triggered[num_timings], timing_sense[num_timings]);
             num_timings++;
         }
 
@@ -143,7 +132,6 @@ public:
                     lut_template_var[num_luts * 2 + 1] = -1;
                 }
                 allocated[num_luts] = true;
-                // printf("%d %d %d\n", lut->indices1.size(), lut->indices2.size(), lut->table.size());
             } else {
                 num_x[num_luts] = 0;
                 num_y[num_luts] = 0;
@@ -257,7 +245,6 @@ public:
 
         x_idx[1] = lower_bound<float>(d_x_array + d_x_offset[in_timing_lut], d_num_x[in_timing_lut], x);
         y_idx[1] = lower_bound<float>(d_y_array + d_y_offset[in_timing_lut], d_num_y[in_timing_lut], y);
-        // printf("%d %d\n", x_idx[1], y_idx[1]);
 
         x_idx[1] = max(1, min(d_num_x[in_timing_lut] - 1, x_idx[1]));
         y_idx[1] = max(1, min(d_num_y[in_timing_lut] - 1, y_idx[1]));
@@ -265,8 +252,6 @@ public:
         y_idx[0] = y_idx[1] - 1;
         if (d_num_x[in_timing_lut] == 1) x_idx[1] = 0;
         if (d_num_y[in_timing_lut] == 1) y_idx[1] = 0;
-
-        // printf("idx: %d %d %d %d\n", x_idx[0], x_idx[1], y_idx[0], y_idx[1]);
 
         // interpolation
         float numeric[2];
@@ -281,30 +266,17 @@ public:
                                         d_table_array[d_table_offset[in_timing_lut] + x_idx[1] * d_num_y[in_timing_lut] + y_idx[1]],
                                         x);
 
-        // if ((numeric[0] < 0 || numeric[1] < 0) && in_timing_lut == 55) {
-        //     printf("x: %f, y: %f, %f %f\n from lut %d\n", x, y, numeric[0], numeric[1], in_timing_lut);
-        //     // print the whole look up table
-        //     for (int i = 0; i < d_num_x[in_timing_lut]; i++) {
-        //         for (int j = 0; j < d_num_y[in_timing_lut]; j++) {
-        //             printf("%f ", d_table_array[d_table_offset[in_timing_lut] + i * d_num_y[in_timing_lut] + j]);
-        //         }
-        //         printf("\n");
-        //     }
-        // }
         return interpolate<float>(d_y_array[d_y_offset[in_timing_lut] + y_idx[0]], d_y_array[d_y_offset[in_timing_lut] + y_idx[1]], numeric[0], numeric[1], y);
     }
 
     __device__ __forceinline__ float query(int timing_id, int irf, int orf, float slew_or_related, float load_or_constraint, int type) {  // 0:cell/1:trans/3:constraint
-        // printf("%d %d %d %f %f %d\n", timing_id, irf, orf, slew, load, type);
         if (!is_transition_defined(timing_id, irf, orf)) {
-            // printf("not defined\n");
             // return std::nullopt;
             return nanf("");
         }
 
         int in_timing_lut = num_luts_in_timing * timing_id + orf + type * 2;
         in_timing_lut = d_allocated[in_timing_lut] ? in_timing_lut : -1;
-        // printf("%d\n", in_timing_lut);
 
         if (in_timing_lut == -1) {
             // return std::nullopt;
@@ -355,15 +327,12 @@ public:
             }
         }
 
-        // float val1 = load; // TODO: order
-        // float val2 = slew;
-
         return lut(in_timing_lut, val1, val2);
     }
 
     __host__ __forceinline__ void freeMem() {
         if (allocated) {
-            printf("destruct gputiming\n");
+            logger.info("destruct gputiming");
             delete[] num_x;
             delete[] num_y;
             delete[] num_table;

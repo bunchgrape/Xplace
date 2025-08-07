@@ -50,7 +50,6 @@ public:
     string module_name = "";
     VerilogParser* verilog_parser = nullptr;
 
-    // gt::TimingData<std::shared_ptr<gt::Celllib>, gt::MAX_SPLIT> celllib;
     array<std::shared_ptr<gt::CellLib>, 2> cell_libs_;
 
     vector<Layer> layers;

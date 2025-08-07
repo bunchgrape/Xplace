@@ -241,9 +241,6 @@ class ParamScheduler:
         ))
         
     def push_timing_sol(self, timing_metrics, hpwl, overflow, mov_node_pos: torch.Tensor):
-        # self.timing_sol_recorder.append((
-        #     timing_metrics, hpwl, overflow, mov_node_pos.detach().clone()
-        # ))
         if overflow > self.stop_overflow: # skip overflow solutions
             return
         wns_early, tns_early, wns_late, tns_late = timing_metrics

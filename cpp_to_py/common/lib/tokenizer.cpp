@@ -128,8 +128,6 @@ std::vector<std::string> tokenize(
     }
   }
 
-  //std::cout << std::string_view(buffer.data()) << std::endl;
-
   // Parse the token.
   std::string token;
   std::vector<std::string> tokens;

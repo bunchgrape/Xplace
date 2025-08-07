@@ -44,7 +44,6 @@ bool loadParams(const pybind11::dict& kwargs) {
         db::setting.OutputFile = kwargs["output"].cast<std::string>();
     }
 
-    // verilog is unused now
     if (kwargs.contains("verilog")) {
         db::setting.Verilog = kwargs["verilog"].cast<std::string>();
     }

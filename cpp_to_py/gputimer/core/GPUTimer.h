@@ -28,7 +28,6 @@ public:
     ~GPUTimer();
     spef::Spef spef;
     void read_spef(const std::string& file);
-    void write_spef(const std::string& file);
 
     // === functions ===
     void initialize();
@@ -39,16 +38,17 @@ public:
     void update_states();
     void update_timing();
     void update_endpoints();
+    
     float report_wns(int el);
     float report_tns_elw(int el);
     tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> report_wns_and_tns();
     torch::Tensor report_pin_slack();
+    torch::Tensor endpoints_index();
+    torch::Tensor report_endpoint_slack();
     torch::Tensor report_pin_at();
     torch::Tensor report_pin_rat();
     torch::Tensor report_pin_slew();
     torch::Tensor report_pin_load();
-    torch::Tensor report_ep_slack();
-    torch::Tensor endpoints_index();
     tuple<vector<int64_t>, vector<float>, vector<float>> report_path(int ep_idx = -1, int el = -1, bool verbose = false);
     vector<vector<int64_t>> report_K_path(int K, bool verbose = false);
     tuple<torch::Tensor, torch::Tensor> report_criticality(int K, bool verbose = false, bool deterministic = true);
@@ -86,7 +86,6 @@ public:
     int* net_is_clock;
 
     float clock_period;
-    // GPULutAllocator *d_allocator;
 
 public:
     float* x;
@@ -125,8 +124,8 @@ public:
     float res_unit;
     float cap_unit;
 
-    torch::Tensor endpoint_slacks;
     torch::Tensor pin_slacks;
+    torch::Tensor endpoint_slacks;
 };
 
 }  // namespace gt

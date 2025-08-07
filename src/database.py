@@ -117,7 +117,6 @@ class PlaceData(object):
             if celltype_name.startswith("CORE/DFF"):
                 self.node_special_type[node_id] = 2
 
-        self.node_criticality = torch.zeros(node_pos.shape[0], dtype=torch.float32)
 
         dataset_format = ""
         if "aux" in dataset_path.keys():

@@ -21,7 +21,7 @@ std::unique_ptr<char*, std::function<void(char**)>> c_args(const std::vector<std
 }
 
 void SDC::read(const std::filesystem::path& path) {
-    logger.infoif(!std::filesystem::exists(path), "sdc ", path, " doesn't exist");
+    logger.infoif(!std::filesystem::exists(path), "sdc file %s doesn't exist", path.c_str());
     logger.info("loading sdc %s", path.c_str());
 
     auto sdc_path = std::filesystem::absolute(path);
@@ -44,7 +44,7 @@ void SDC::read(const std::filesystem::path& path) {
         std::vector<std::string> args{TCLSH_PATH, "sdc.tcl", sdc_path.c_str(), sdc_json.c_str()};
 
         ::execvp(args[0].c_str(), c_args(args).get());
-        logger.error("exec failed: ", strerror(errno));
+        logger.error("exec failed: %s", strerror(errno));
         ::exit(EXIT_FAILURE);
         logger.warning("sdc reader not implemented yet");
     }
@@ -60,7 +60,7 @@ void SDC::read(const std::filesystem::path& path) {
             if (WIFEXITED(s)) {
                 logger.errorif(WEXITSTATUS(s) != EXIT_SUCCESS, "sdc reader exited with failure");
             } else if (WIFSIGNALED(s)) {
-                logger.error("sdc reader killed by signal ", WTERMSIG(s));
+                logger.error("sdc reader killed by signal %s", WTERMSIG(s));
                 return;
             } else if (WIFSTOPPED(s)) {
                 logger.info("sdc reader stopped");
@@ -71,7 +71,7 @@ void SDC::read(const std::filesystem::path& path) {
 
         std::ifstream ifs(sdc_json);
 
-        logger.infoif(!ifs, "failed to open ", sdc_json);
+        logger.infoif(!ifs, "failed to open %s", sdc_json);
 
         Json json;
         ifs >> json;
@@ -99,7 +99,7 @@ void SDC::read(const std::filesystem::path& path) {
         try {
             std::filesystem::remove(sdc_json);
         } catch (const std::exception& e) {
-            logger.warning("can't remove ", sdc_json, ": ", e.what());
+            logger.warning("can't remove %s: %s", sdc_json, e.what());
         }
     }
 }
@@ -119,9 +119,9 @@ SetUnits::SetUnits(const Json& json) {
         } else if (key == "-resistance") {
             resistance = unquoted(itr.value());
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }
@@ -154,9 +154,9 @@ SetInputDelay::SetInputDelay(const Json& json) {
         } else if (key == "port_pin_list") {
             port_pin_list = parse_port(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }
@@ -185,7 +185,7 @@ SetDrivingCell::SetDrivingCell(const Json& json) {
         } else if (key == "port_list") {
             port_list = parse_port(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
             logger.error("%s: %s not supported", command, std::quoted(key));
         }
@@ -212,9 +212,9 @@ SetInputTransition::SetInputTransition(const Json& json) {
         } else if (key == "port_list") {
             port_list = parse_port(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }
@@ -247,9 +247,9 @@ SetOutputDelay::SetOutputDelay(const Json& json) {
         } else if (key == "port_pin_list") {
             port_pin_list = parse_port(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }
@@ -272,9 +272,9 @@ SetLoad::SetLoad(const Json& json) {
         } else if (key == "value") {
             value = std::stof(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }
@@ -295,9 +295,9 @@ CreateClock::CreateClock(const Json& json) {
         } else if (key == "port_pin_list") {
             port_pin_list = parse_port(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }
@@ -309,9 +309,9 @@ SetClockUncertainty::SetClockUncertainty(const Json& json) {
         } else if (key == "object_list") {
             object_list = parse_port(unquoted(itr.value()));
         } else if (key == "command") {
-            logger.errorif(itr.value() != command, "wrong command field: ", itr.value());
+            logger.errorif(itr.value() != command, "wrong command field: %s", itr.value());
         } else {
-            logger.error(command, ": ", std::quoted(key), " not supported");
+            logger.error("%s: %s not supported", command, std::quoted(key));
         }
     }
 }

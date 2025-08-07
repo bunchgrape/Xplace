@@ -45,17 +45,10 @@ __global__ void RCTreeNet(float *x,
             float pin_cap = cf * wl * 0.5;
             float pin_res = rf * wl;
             root_cap += pin_cap;
-            // if (pin_id == 14893) {
-            //     printf("pin %d, x %.5f, y %.5f, dist %.5f, wl %.5f, cap %.5f, res %.5f\n", pin_id, x_pin, y_pin, dist, wl, pin_cap, pin_res);
-            // }
             for (int j = 0; j < NUM_ATTR; j++) {
                 float pin_cap_lib =
                     isnan(pinCap[pin_id * (NUM_ATTR + 2) + j]) ? pinCap[pin_id * (NUM_ATTR + 2) + 4 + (j >> 1)] : pinCap[pin_id * (NUM_ATTR + 2) + j];
                 float load = pinLoad[pin_id * NUM_ATTR + j];
-
-                // if (pin_id == 14893) {
-                //     printf("load %.5f, pin_cap %.5f, pin_cap_lib %.5f\n", load, pin_cap, pin_cap_lib);
-                // }
 
                 pinLoad[pin_id * NUM_ATTR + j] = isnan(load) ? pin_cap + pin_cap_lib : load + pin_cap + pin_cap_lib;
                 pinRootRes[pin_id * NUM_ATTR + j] = pin_res;
@@ -69,8 +62,6 @@ __global__ void RCTreeNet(float *x,
                 isnan(pinCap[root * (NUM_ATTR + 2) + j]) ? pinCap[root * (NUM_ATTR + 2) + 4 + (j >> 1)] : pinCap[root * (NUM_ATTR + 2) + j];
             float load = pinLoad[root * NUM_ATTR + j];
             pinLoad[root * NUM_ATTR + j] = isnan(load) ? root_cap + pin_cap_lib : load + root_cap + pin_cap_lib;
-            // printf("pin %d, %.5f * %.5f = %.5f\n", root, pinRootRes[root * NUM_ATTR + j], pinLoad[root * NUM_ATTR + j], pinRootDelay[root *
-            // NUM_ATTR + j]);
         }
         // Delay
         for (int i = start_idx + 1; i < end_idx; i++) {
@@ -79,8 +70,6 @@ __global__ void RCTreeNet(float *x,
                 pinRootDelay[pin_id * NUM_ATTR + j] = pinRootRes[pin_id * NUM_ATTR + j] * pinLoad[pin_id * NUM_ATTR + j];
                 pinImpulse[pin_id * NUM_ATTR + j] = 0;
             }
-            // printf("pin %d, %.5f * %.5f = %.5f\n", pin_id, pinRootRes[pin_id * NUM_ATTR], pinLoad[pin_id * NUM_ATTR], pinRootDelay[pin_id *
-            // NUM_ATTR]);
         }
         // Impulse
         for (int i = start_idx + 1; i < end_idx; i++) {
@@ -100,16 +89,6 @@ __global__ void RCTreeNet(float *x,
                 pinImpulse[root * NUM_ATTR + j] = 0;
             }
         }
-        // for (int i = start_idx + 1; i < end_idx; i++) {
-        //     int pin_id = flat_net2pin_map[i];
-        //     for (int j = 0; j < NUM_ATTR; j++) {
-        //         // printf("pin %d cond %d, delay %.5f, impulse %.5f  \n", pin_id, j, pinRootDelay[pin_id * NUM_ATTR + j], pinImpulse[pin_id * NUM_ATTR + j]);
-        //         if (abs(pinImpulse[pin_id * NUM_ATTR + j] - pinRootDelay[pin_id * NUM_ATTR + j]) > 1e-5) {
-        //             printf("Error: pin %d cond %d, delay %.5f, impulse %.5f  \n", pin_id, j, pinRootDelay[pin_id * NUM_ATTR + j],
-        //                    pinImpulse[pin_id * NUM_ATTR + j]);
-        //         }
-        //     }
-        // }
     }
 }
 
@@ -180,10 +159,6 @@ __global__ void flatten_rc_kernel(const int *edge_from,
             parent_node[root] = -1;
             root_dist[root] = 0;
         }
-        // extern __shared__ int edge_offset;
-        // if (threadIdx.x == 0) {
-        //     edge_offset = 0;
-        // }
         __syncthreads();
 
         for (int d = 0; d < nend - nst; d++) {
@@ -198,8 +173,6 @@ __global__ void flatten_rc_kernel(const int *edge_from,
                     for (int j = 0; j < NUM_ATTR; j++) {
                         atomicAdd(&res_parent[to * NUM_ATTR + j], res);
                     }
-                    // int edge_off = atomicAdd(&edge_offset, 1);
-                    // edge_order[est + edge_off] = i;
                 } else if ((root_dist[to] == d) && (root_dist[from] == -1)) {
                     parent_node[from] = to;
                     root_dist[from] = d + 1;
@@ -207,8 +180,6 @@ __global__ void flatten_rc_kernel(const int *edge_from,
                     for (int j = 0; j < NUM_ATTR; j++) {
                         atomicAdd(&res_parent[from * NUM_ATTR + j], res);
                     }
-                    // int edge_off = atomicAdd(&edge_offset, 1);
-                    // edge_order[est + edge_off] = i;
                 }
             }
             __syncthreads();
@@ -217,14 +188,6 @@ __global__ void flatten_rc_kernel(const int *edge_from,
 
         if (threadIdx.x == 0) {
             const int num_edges_local = eend - est;
-            // int* edge_offsets = (int*)malloc(num_edges_local);
-            // int* edge_cnt_total = (int*)malloc(num_edges_local);
-            // for (int i = 0; i < num_edges_local; i++) {
-            //     // edge_offsets[i] = 0;
-            //     // edge_cnt_total[i] = 0;
-            //     atomicExch(&edge_offsets[i], 0);
-            //     atomicExch(&edge_cnt_total[i], 0);
-            // }
 
             // calculate accumulation
             int edge_count = 0;
@@ -241,12 +204,8 @@ __global__ void flatten_rc_kernel(const int *edge_from,
 
                 int start = min_d == 0 ? 0 : cnts[min_d - 1 + nst];
                 edge_order[est + start + edge_cnts[min_d + est]] = i + est;
-                // edge_cnts[min_d + est] += 1;
                 atomicAdd(&edge_cnts[min_d + est], 1);
             }
-
-            // free(edge_offsets);
-            // free(edge_cnt_total);
         }
 
         __syncthreads();
@@ -513,9 +472,6 @@ void propagate_rc_tree(std::vector<int> host_edge_from,
 
     move_to_timing_graph<<<numBlocks2, block_size>>>(flat_net2node_start_map, node2pin_map, node_load, node_delay, node_impulse, pinLoad, pinImpulse, pinRootDelay, num_nets);
 
-    // debug1<<<1, 1>>>(pinLoad, pinImpulse, pinRootDelay, num_pins);
-    // debug2<<<1, 1>>>(node2pin_map, node_load, node_delay, node_impulse, node_ldelay, node_beta, num_nodes);
-
     cudaFree(edge_from);
     cudaFree(edge_to);
     cudaFree(flat_net2node_start_map);
@@ -546,24 +502,6 @@ __global__ void calc_rc_kernel(const int *edge_from,
                                float unit_to_micron,
                                float rf,
                                float cf) {
-    // const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // if (idx < num_nets) {
-    //     int est = flat_net2edge_start_map[idx];
-    //     int eend = flat_net2edge_start_map[idx + 1];
-
-    //     for (int i = est; i < eend; i += 1) {
-    //         int edge_idx = edge_order[i];
-    //         int from = edge_from[edge_idx];
-    //         int to = edge_to[edge_idx];
-    //         float wl = edge_wl[edge_idx];
-    //         if (net_is_clock[idx]) wl = 0;
-    //         float cap = wl * cf * 0.5 / unit_to_micron;
-    //         for (int j = 0; j < NUM_ATTR; j++) {
-    //             atomicAdd(&node_cap[from * NUM_ATTR + j], cap);
-    //             atomicAdd(&node_cap[to * NUM_ATTR + j], cap);
-    //         }
-    //     }
-    // }
     const int idx = blockIdx.x;
     if (idx < num_nets) {
         int nst = flat_net2node_start_map[idx];
@@ -650,7 +588,6 @@ void calc_res_cap(std::vector<int> host_edge_from,
     cudaMemset(cnts, 0, num_nodes * sizeof(int));
 
     int thread_count = 64;
-    // int numBlocks = num_nets + thread_count - 1 / thread_count;
     int numBlocks = num_nets;
     calc_rc_kernel<<<numBlocks, thread_count>>>(edge_from,
                                                 edge_to,

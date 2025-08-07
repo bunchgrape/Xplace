@@ -7,12 +7,9 @@
 
 namespace gt {
 
-// GPULutAllocator *d_allocator;
-
 void GPUTimer::initialize() {
     cudaMalloc(&pinCap, num_pins * (NUM_ATTR + 2) * sizeof(float));
     cudaMalloc(&pinWireCap, num_pins * NUM_ATTR * sizeof(float));
-
     cudaMalloc(&testRelatedAT, num_tests * NUM_ATTR * sizeof(float));
     cudaMalloc(&testRAT, num_tests * NUM_ATTR * sizeof(float));
     cudaMalloc(&testConstraint, num_tests * NUM_ATTR * sizeof(float));
@@ -27,14 +24,6 @@ void GPUTimer::initialize() {
     cudaMemcpy(net_is_clock, gtdb.net_is_clock.data(), num_nets * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(primary_outputs, gtdb.primary_outputs.data(), gtdb.primary_outputs.size() * sizeof(index_type), cudaMemcpyHostToDevice);
 
-    // auto GPUTiming = GPULutAllocator();
-    // GPUTiming.AllocateBatch(gtdb.timings);
-    // GPUTiming.CopyToGPU();
-    // printf("%d luts\n", GPUTiming.num_luts);
-    // // GPULutAllocator *d_allocator;
-    // cudaMalloc((void **)&d_allocator, sizeof(GPULutAllocator));
-    // cudaMemcpy(d_allocator, &GPUTiming, sizeof(GPULutAllocator), cudaMemcpyHostToDevice);
-    // GPUTiming.CopyToGPU(d_allocator);
 
     allocator = new GPULutAllocator();
     allocator->AllocateBatch(gtdb.liberty_timing_arcs);
@@ -43,7 +32,7 @@ void GPUTimer::initialize() {
     cudaMemcpy(d_allocator, allocator, sizeof(GPULutAllocator), cudaMemcpyHostToDevice);
     allocator->CopyToGPU(d_allocator);
 
-    printf("GPUTimer initialized\n");
+    logger.info("GPUTimer initialized");
 
     cudaMalloc(&__pinSlew__, num_pins * NUM_ATTR * sizeof(float));
     cudaMalloc(&__pinLoad__, num_pins * NUM_ATTR * sizeof(float));
@@ -61,7 +50,6 @@ GPUTimer::~GPUTimer() {
 
     cudaFree(pinCap);
     cudaFree(pinWireCap);
-
     cudaFree(testRelatedAT);
     cudaFree(testRAT);
     cudaFree(testConstraint);
@@ -77,14 +65,8 @@ GPUTimer::~GPUTimer() {
     cudaFree(__pinRAT__);
     cudaFree(__pinAT__);
 
-    // cudaFree(d_allocator);
-    // destruct GPULutAllocator
-    // gtdb.~GTDatabase();
-    // allocator->free(d_allocator);
     allocator->~GPULutAllocator();
     cudaFree(d_allocator);
-    // d_allocator->~GPULutAllocator();
-    // delete allocator;
 }
 
 void GPUTimer::update_states() {
@@ -120,9 +102,6 @@ __global__ void update_endpoints_kernel0(float *pinAT, float *testRAT, int *test
         const int arc_id = test_id2_arc_id[test_idx];
         const int from_pin_id = timing_arc_from_pin_id[arc_id];
         const int to_pin_id = timing_arc_to_pin_id[arc_id];
-        // printf("test idx %d arc id %d from %d to %d\n", test_idx, arc_id, from_pin_id, to_pin_id);
-        // printf("test pin idx %d at %.5f rat %.5f\n", to_pin_id, pinAT[to_pin_id * NUM_ATTR + i], testRAT[test_idx *
-        // NUM_ATTR + i]);
         if (isnan(pinAT[to_pin_id * NUM_ATTR + i]) || isnan(testRAT[test_idx * NUM_ATTR + i])) return;
         if (el == 0) {
             endpoints0[test_idx * NUM_ATTR + i] = pinAT[to_pin_id * NUM_ATTR + i] - testRAT[test_idx * NUM_ATTR + i];
@@ -139,8 +118,6 @@ __global__ void update_endpoints_kernel1(float *pinAT, float *pinRAT, index_type
     const int el = i >> 1;
     if (po_idx < num_POs) {
         const int pin_idx = primary_outputs[po_idx];
-        // printf("po pin idx %d at %.5f rat %.5f\n", pin_idx, pinAT[pin_idx * NUM_ATTR + i], pinRAT[pin_idx * NUM_ATTR
-        // + i]);
         if (isnan(pinAT[pin_idx * NUM_ATTR + i]) || isnan(pinRAT[pin_idx * NUM_ATTR + i])) return;
         if (el == 0) {
             endpoints1[po_idx * NUM_ATTR + i] = pinAT[pin_idx * NUM_ATTR + i] - pinRAT[pin_idx * NUM_ATTR + i];

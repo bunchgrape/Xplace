@@ -32,8 +32,6 @@ class TimingArc;
 struct LutTemplate;
 class Lut;
 
-// using CellView = std::array<const Cell *, MAX_SPLIT>;
-// using CellpinView = std::array<Cellpin *, MAX_SPLIT>;
 enum class DelayModel { generic_cmos, table_lookup, cmos2, piecewise_cmos, dcm, polynomial, unknown };
 enum class CellPortDirection { input, output, inout, internal, unknown };
 DelayModel findDelayModel(const std::string model_name);

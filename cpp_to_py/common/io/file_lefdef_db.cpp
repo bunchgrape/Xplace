@@ -456,7 +456,6 @@ bool Database::writeNets(std::ofstream& ofs) {
         Net* net = nets[i];
         std::ofstream& oss = ofs;
 
-        // oss << "   - " << expand_name(net->name) << " \n";
         oss << "   - " << expand_name(net->name) << " \n";
         for (Pin* pin : net->pins) {
             if (pin->iopin)
@@ -465,7 +464,6 @@ bool Database::writeNets(std::ofstream& ofs) {
             else
                 oss << " ( " << expand_name(pin->cell->name()) << " " << pin->type->name() << " )";
         }
-        // oss << " + USE SIGNAL ;\n";
         const char use(net->_type);
         if (use == 'p') {
             oss << " + USE POWER ;\n";
@@ -829,7 +827,7 @@ int readLefLayer(lefrCallbackType_e c, lefiLayer* leflayer, lefiUserData ud) {
     }
 
     if (db->name_layers.find(name) != db->name_layers.end()) {
-        // logger.warning("layer type re-defined: %s", name.c_str());
+        logger.warning("layer type re-defined: %s", name.c_str());
         return 0;
     }
 
@@ -1559,11 +1557,6 @@ int readDefComponent(defrCallbackType_e c, defiComponent* co, defiUserData ud) {
     Database* db = (Database*)ud;
     CellType* celltype = db->getCellType(co->name());
 
-    // celltype name start with FILLCELL continue
-    if (celltype && celltype->name.find("FILLCELL") == 0) {
-        return 0;  // skip fill cells
-    }
-
     string cellName(co->id());
     cellName = validate_token(cellName);
     Cell* cell = db->addCell(cellName, celltype);
@@ -1853,10 +1846,11 @@ int readDefNet(defrCallbackType_e c, defiNet* dnet, defiUserData ud) {
 
     string netName(dnet->name());
     netName = validate_token(netName);
-    // exclude VDD and VSS
+    // exclude VDD and VSS TODO:
     if (netName == "VDD" || netName == "VSS") {
         return 0;
     }
+    
     Net* net = db->addNet(netName, ndr);
 
     if (dnet->hasUse()) {

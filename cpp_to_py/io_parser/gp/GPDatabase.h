@@ -233,7 +233,6 @@ public:
     const std::vector<GPNode>& getNodes() const { return nodes; }
     const std::vector<string>& getNodeNames() const { return node_names; }
     const std::vector<string>& getNodeTypeNames() const { return node_type_names; }
-    const std::unordered_map<int, vector<int>>& getBitsTypeIndex() const { return database.bit_to_celltypes; }
     const std::vector<GPNet>& getNets() const { return nets; }
     const std::vector<std::string>& getNetNames() const { return net_names; }
     const std::vector<GPPin>& getPins() const { return pins; }

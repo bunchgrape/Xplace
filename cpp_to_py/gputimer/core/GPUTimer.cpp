@@ -20,7 +20,7 @@ GPUTimer::GPUTimer(std::shared_ptr<GTDatabase> gtdb_, shared_ptr<TimingTorchRawD
       node_size_y(timing_raw_db.node_size_y.data_ptr<float>()),
       pin_offset_x(timing_raw_db.pin_offset_x.data_ptr<float>()),
       pin_offset_y(timing_raw_db.pin_offset_y.data_ptr<float>()),
-      // gpu pin attributes
+      // GPU pin attributes array
       pinSlew(timing_raw_db.pinSlew.data_ptr<float>()),
       pinLoad(timing_raw_db.pinLoad.data_ptr<float>()),
       pinRAT(timing_raw_db.pinRAT.data_ptr<float>()),
@@ -28,11 +28,11 @@ GPUTimer::GPUTimer(std::shared_ptr<GTDatabase> gtdb_, shared_ptr<TimingTorchRawD
       pinImpulse(timing_raw_db.pinImpulse.data_ptr<float>()),
       pinRootDelay(timing_raw_db.pinRootDelay.data_ptr<float>()),
       arcDelay(timing_raw_db.arcDelay.data_ptr<float>()),
-      pinImpulse_ref(timing_raw_db.pinImpulse_ref.data_ptr<float>()),
+      // Critical path prefix info
       at_prefix_pin(timing_raw_db.at_prefix_pin.data_ptr<index_type>()),
       at_prefix_arc(timing_raw_db.at_prefix_arc.data_ptr<index_type>()),
       at_prefix_attr(timing_raw_db.at_prefix_attr.data_ptr<index_type>()),
-      // Timer graph topology variables
+      // Timing graph topology
       pin_forward_arc_list(timing_raw_db.pin_forward_arc_list.data_ptr<index_type>()),
       pin_forward_arc_list_end(timing_raw_db.pin_forward_arc_list_end.data_ptr<index_type>()),
       pin_backward_arc_list(timing_raw_db.pin_backward_arc_list.data_ptr<index_type>()),
@@ -47,7 +47,7 @@ GPUTimer::GPUTimer(std::shared_ptr<GTDatabase> gtdb_, shared_ptr<TimingTorchRawD
       arc_types(timing_raw_db.arc_types.data_ptr<int>()),
       arc_id2test_id(timing_raw_db.arc_id2test_id.data_ptr<int>()),
       test_id2_arc_id(timing_raw_db.test_id2_arc_id.data_ptr<int>()),
-      // circuit info
+      // Circuit info
       flat_node2pin_start_map(timing_raw_db.flat_node2pin_start_map.data_ptr<int>()),
       flat_node2pin_map(timing_raw_db.flat_node2pin_map.data_ptr<int>()),
       pin2node_map(timing_raw_db.pin2node_map.data_ptr<int>()),
@@ -83,7 +83,7 @@ torch::Tensor GPUTimer::report_pin_at() {return timing_raw_db.pinAT;}
 torch::Tensor GPUTimer::report_pin_rat() { return timing_raw_db.pinRAT; }
 torch::Tensor GPUTimer::report_pin_slew() { return timing_raw_db.pinSlew; }
 torch::Tensor GPUTimer::report_pin_load() { return timing_raw_db.pinLoad; }
-torch::Tensor GPUTimer::report_ep_slack() { return endpoint_slacks; }
+torch::Tensor GPUTimer::report_endpoint_slack() { return endpoint_slacks; }
 torch::Tensor GPUTimer::endpoints_index(){ return timing_raw_db.endpoints_id;}
 float GPUTimer::time_unit() const { return gtdb.time_unit; }
 

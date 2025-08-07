@@ -154,8 +154,6 @@ tuple<torch::Tensor, torch::Tensor> GPUTimer::report_criticality_threshold(float
 
     auto threshold = thrs * ep_slack_elw_ordered[0];
     int K = (ep_slack_elw_ordered < threshold).sum().item<int>();
-    // printf(("thrs %.2f, worst slack %.2f\n"), thrs, ep_slack_elw_ordered[0].item<float>());
-    // cout << "Threshold: " << threshold << " K: " << (ep_slack_elw_ordered < threshold).sum() << endl;
 
     indices = indices.contiguous();
     ep_i_indices = ep_i_indices.contiguous();

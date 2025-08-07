@@ -45,7 +45,7 @@ __global__ void calc_node_grad_deterministic_cuda_kernel(
 
 __global__ void wa_wirelength_pin_root_timing_kernel(
     const torch::PackedTensorAccessor32<float, 2, torch::RestrictPtrTraits> pin_pos,
-    const torch::PackedTensorAccessor32<float, 1, torch::RestrictPtrTraits> timing_pin_grad,
+    const torch::PackedTensorAccessor32<float, 1, torch::RestrictPtrTraits> timing_pin_weight,
     const torch::PackedTensorAccessor32<int64_t, 1, torch::RestrictPtrTraits> hyperedge_list,
     const torch::PackedTensorAccessor32<int64_t, 1, torch::RestrictPtrTraits> hyperedge_list_end,
     const torch::PackedTensorAccessor32<bool, 1, torch::RestrictPtrTraits> net_mask,
@@ -118,7 +118,7 @@ __global__ void wa_wirelength_pin_root_timing_kernel(
                 float root_grad = (grad_const + x_coeff * root_x) * recenter_exp_r -
                                   (grad_nconst + nx_coeff * root_x) * recenter_exp_nr;
 
-                float delta_x = timing_pin_grad[pin_id];
+                float delta_x = timing_pin_weight[pin_id];
                 pin_grad[pin_id][c] = x_grad * delta_x;
                 pin_grad[root_id][c] += root_grad * delta_x;
             }
@@ -150,7 +150,7 @@ void calc_node_grad_cuda(torch::Tensor node_grad,
 }
 
 std::vector<torch::Tensor> wa_wirelength_timing_weight_cuda(torch::Tensor node_pos,
-                                                            torch::Tensor timing_pin_grad,
+                                                            torch::Tensor timing_pin_weight,
                                                             torch::Tensor pin_id2node_id,
                                                             torch::Tensor pin_rel_cpos,
                                                             torch::Tensor node2pin_list,
@@ -190,7 +190,7 @@ std::vector<torch::Tensor> wa_wirelength_timing_weight_cuda(torch::Tensor node_p
     float inv_gamma = 1 / gamma;
     wa_wirelength_pin_root_timing_kernel<<<blocks2, threads2, 0, stream>>>(
         pin_pos.packed_accessor32<float, 2, torch::RestrictPtrTraits>(),
-        timing_pin_grad.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
+        timing_pin_weight.packed_accessor32<float, 1, torch::RestrictPtrTraits>(),
         hyperedge_list.packed_accessor32<int64_t, 1, torch::RestrictPtrTraits>(),
         hyperedge_list_end.packed_accessor32<int64_t, 1, torch::RestrictPtrTraits>(),
         net_mask.packed_accessor32<bool, 1, torch::RestrictPtrTraits>(),

@@ -50,17 +50,16 @@ def get_option():
     parser.add_argument('--visualize_cgmap', type=str2bool, default=False, help='visualize congestion map')
 
     # timing opt params
-    parser.add_argument('--timing_opt', type=str2bool, default=True, help='perform timing optimization') 
+    parser.add_argument('--timing_opt', type=str2bool, default=False, help='perform timing optimization') 
     parser.add_argument('--timing_freq', type=int, default=1, help='timing freq')
     parser.add_argument('--calibration', type=str2bool, default=True, help='perform timer calibration') 
-    parser.add_argument('--calibration_step', type=float, default=0.1, help='')
-    parser.add_argument('--timing_start_iter', type=int, default=100, help='')
-    parser.add_argument('--timing_init_weight', type=float, default=0.05, help='')
-    parser.add_argument('--decay_factor', type=float, default=0.3, help='')
-    parser.add_argument('--decay_boost', type=float, default=3, help='')
-    parser.add_argument('--wire_resistance_per_micron', type=float, default=2.535, help='')
-    parser.add_argument('--wire_capacitance_per_micron', type=float, default=0.16e-15, help='')
-    parser.add_argument('--def_file', type=str, default="", help='placed def file')
+    parser.add_argument('--calibration_step', type=float, default=0.1, help='timing calibration step')
+    parser.add_argument('--timing_start_iter', type=int, default=100, help='start iteration of timing optimization')
+    parser.add_argument('--timing_init_weight', type=float, default=0.05, help='initial timing wirelength weight')
+    parser.add_argument('--decay_factor', type=float, default=0.3, help='decay factor of timing weight')
+    parser.add_argument('--decay_boost', type=float, default=3, help='dynamic decay boost factor')
+    parser.add_argument('--wire_resistance_per_micron', type=float, default=2.535, help='unit wire resistance, normalized across all layers')
+    parser.add_argument('--wire_capacitance_per_micron', type=float, default=0.16e-15, help='unit wire capacitance, normalized across all layers')
 
     # detailed placement and evaluation
     parser.add_argument('--legalization', type=str2bool, default=True, help='perform lg') 

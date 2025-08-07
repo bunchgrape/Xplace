@@ -14,6 +14,10 @@ std::shared_ptr<gt::GPUTimer> create_gputimer(const py::dict& kwargs,
                                               std::shared_ptr<db::Database> rawdb,
                                               std::shared_ptr<gp::GPDatabase> gpdb,
                                               std::shared_ptr<gt::TimingTorchRawDB> timing_raw_db) {
+
+    if (!rawdb->liberty_read) {
+        throw std::invalid_argument("Liberty file not found. Please check!");
+    }
     std::shared_ptr<gt::GTDatabase> gtdb = std::make_shared<gt::GTDatabase>(rawdb, gpdb, timing_raw_db);
     auto sdc = std::make_shared<gt::sdc::SDC>();
 
@@ -54,7 +58,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("report_pin_rat", &gt::GPUTimer::report_pin_rat, py::return_value_policy::move)
         .def("report_pin_slew", &gt::GPUTimer::report_pin_slew, py::return_value_policy::move)
         .def("report_pin_load", &gt::GPUTimer::report_pin_load, py::return_value_policy::move)
-        .def("report_ep_slack", &gt::GPUTimer::report_ep_slack, py::return_value_policy::move)
+        .def("report_endpoint_slack", &gt::GPUTimer::report_endpoint_slack, py::return_value_policy::move)
         .def("endpoints_index", &gt::GPUTimer::endpoints_index, py::return_value_policy::copy)
         .def("report_path", &gt::GPUTimer::report_path, py::return_value_policy::copy)
         .def("report_K_path", &gt::GPUTimer::report_K_path, py::return_value_policy::copy)

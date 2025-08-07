@@ -40,7 +40,6 @@ __global__ void explore_path_kernel(index_type* at_prefix_pin,
                 } else {
                     atomicAdd(&from_pin_delay[prev_id], delay);
                 }
-                // atomicAdd(&from_pin_delay[cur_id], delay);
             }
             cur_id = prev_id;
             to_i = from_i;
@@ -82,7 +81,6 @@ __global__ void explore_path_deterministic_kernel(index_type* at_prefix_pin,
                 } else {
                     atomicAdd(&from_pin_delay[prev_id], static_cast<unsigned long long>(delay * scalar));
                 }
-                // atomicAdd(&from_pin_delay[cur_id], delay);
             }
             cur_id = prev_id;
             to_i = from_i;

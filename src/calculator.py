@@ -1,7 +1,6 @@
 import torch
 from .param_scheduler import ParamScheduler
 from .core import merged_wl_loss_grad, merged_wl_loss_grad_timing
-from pdb import set_trace as bp
 
 def apply_precond(mov_node_pos: torch.Tensor, ps: ParamScheduler, args):
     if not args.use_precond:

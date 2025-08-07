@@ -53,9 +53,12 @@ void bindGPDatabase(pybind11::module& m) {
         .def("net_names", &gp::GPDatabase::getNetNames)
         .def("pin_names", &gp::GPDatabase::getPinNames)
         .def("node_names", &gp::GPDatabase::getNodeNames)
+<<<<<<< HEAD
         .def("node_type_names", &gp::GPDatabase::getNodeTypeNames)
         .def("bits_node_type_index", &gp::GPDatabase::getBitsTypeIndex)
         .def("pin_name2pin_id", &gp::GPDatabase::getPinName2PinId, py::return_value_policy::copy)
+=======
+>>>>>>> 2ae6935f6d660d0edeaf08f401ee3abedc28776d
         .def("microns", &gp::GPDatabase::getMicrons, py::return_value_policy::copy)
         .def("dieInfo", &gp::GPDatabase::getDieInfo, py::return_value_policy::copy)  // dieLX, dieHX, dieLY, dieHY
         .def("coreInfo", &gp::GPDatabase::getCoreInfo, py::return_value_policy::copy)  // coreLX, coreHX, coreLY, coreHY

@@ -110,7 +110,6 @@ public:
     unordered_map<string, index_type> primary_output2pin_id;
 
     vector<STAPin*> STA_pins;
-
     vector<int> endpoints_id;
 
     vector<int> liberty_cell_type2port_list_end = {0};
@@ -139,22 +138,23 @@ public:
     vector<int> net_is_clock;
 
     // Timing Graph
-    /// @param pin_frontiers                  Cell libraries
-    /// @param pin_fanout_list_end               vector of celllib views
-    /// @param pin_fanout_list                map from cell name to cell view index
+    /// @param primary_inputs                 primary input pins
+    /// @param primary_outputs                primary output pins
+    /// @param pin_frontiers                  frontier pins
+    /// @param pin_fanout_list_end            pin_fanout start and end index
+    /// @param pin_fanout_list                pin_fanout list of index
+    /// @param pin_num_fanin                  number of fanin pins
+    /// @param pin_forward_arc_list_end       pin_forward_arc start and end index
+    /// @param pin_forward_arc_list           pin_forward_arc list of index
+    /// @param pin_backward_arc_list_end      pin_backward_arc start and end index
+    /// @param pin_backward_arc_list          pin_backward_arc list of index
     vector<index_type> primary_inputs, primary_outputs;
     vector<index_type> pin_frontiers;
     vector<index_type> pin_fanout_list_end, pin_fanout_list;
     vector<int> pin_num_fanin;
-
     vector<index_type> pin_forward_arc_list_end, pin_forward_arc_list;
     vector<index_type> pin_backward_arc_list_end, pin_backward_arc_list;
 
-    // //
-    // vector<vector<index_type>> STAPin_timing_arc_in;
-    // vector<vector<index_type>> STAPin_timing_arc_out;
-    // vector<set<index_type>> STAPin_fanin_Pin;
-    // vector<set<index_type>> STAPin_fanout_Pin;
 };
 
 class TimingTorchRawDB {
@@ -224,11 +224,11 @@ public:
 
 public:
     float scale_factor;
-    float wire_resistance_per_micron = 2.535;
-    float wire_capacitance_per_micron = 0.16e-15;
-    int microns = 2000;
+    float wire_resistance_per_micron;
+    float wire_capacitance_per_micron;
+    int microns;
 
-    // Timer variables
+    // Timer model variables
     /// @param pinSlew                  Slew value on a pin
     /// @param pinLoad                  Load value on a pin
     /// @param pinRAT                   Required arrival time on a pin
@@ -236,8 +236,6 @@ public:
     /// @param pinImpulse               Impulse value on a pin
     /// @param pinRootDelay             Root delay value on a sink pin
 public:
-    // vector<float> pinSlew, pinLoad, pinRAT, pinAT;
-    // vector<float> pinImpulse, pinRootDelay;
     torch::Tensor pinSlew;
     torch::Tensor pinLoad;
     torch::Tensor pinRAT;
@@ -246,7 +244,7 @@ public:
     torch::Tensor pinRootDelay;
 
     // Timer RC Tree variables
-    /// @param endpoints_id          Index of the endpoints
+    /// @param endpoints_id             Index of the endpoints
     /// @param arcDelay                 Delay value of an arc
     /// @param pinImpulse_ref           Reference impulse value of a accurate Timer
     /// @param pinLoad_ref              Reference load value of a accurate Timer
@@ -266,15 +264,15 @@ public:
     torch::Tensor pinRootDelay_compensation;
 
     // Timer graph topology variables
-    /// @param pin_forward_arc_list           List of forward arcs of a pin
-    /// @param pin_forward_arc_list_end       Star & End index of the forward arcs lists
-    /// @param pin_backward_arc_list           List of backward arcs of a pin
-    /// @param pin_backward_arc_list_end       Star & End index of the backward arcs lists
-    /// @param timing_arc_from_pin_id             From pin index of an arc
-    /// @param timing_arc_to_pin_id               To pin index of an arc
-    /// @param pin_num_fanin            Number of fanin pins of a pin
-    /// @param pin_fanout_list          List of fanout pins of a pin
-    /// @param pin_fanout_list_end      Star & End index of the fanout pins lists
+    /// @param pin_forward_arc_list             List of forward arcs of a pin
+    /// @param pin_forward_arc_list_end         Star & End index of the forward arcs lists
+    /// @param pin_backward_arc_list            List of backward arcs of a pin
+    /// @param pin_backward_arc_list_end        Star & End index of the backward arcs lists
+    /// @param timing_arc_from_pin_id           From pin index of an arc
+    /// @param timing_arc_to_pin_id             To pin index of an arc
+    /// @param pin_num_fanin                    Number of fanin pins of a pin
+    /// @param pin_fanout_list                  List of fanout pins of a pin
+    /// @param pin_fanout_list_end              Star & End index of the fanout pins lists
 public:
     torch::Tensor pin_forward_arc_list;
     torch::Tensor pin_forward_arc_list_end;
@@ -287,10 +285,10 @@ public:
     torch::Tensor pin_fanout_list_end;
 
     // Timer timing liberty variables
-    /// @param arc_types                Types of an arc: 0/1
-    /// @param timing_arc_id_map              Timing liberty index of an arc
-    /// @param arc_id2test_id                Timing test index of an arc: -1 for non-test arcs
-    /// @param test_id2_arc_id                Timing test index of an arc: -1 for non-test arcs
+    /// @param arc_types                        Types of an arc: 0/1
+    /// @param timing_arc_id_map                Timing liberty index of an arc
+    /// @param arc_id2test_id                   Timing test index of an arc: -1 for non-test arcs
+    /// @param test_id2_arc_id                  Timing arc index of a test
 public:
     torch::Tensor arc_types;
     torch::Tensor timing_arc_id_map;

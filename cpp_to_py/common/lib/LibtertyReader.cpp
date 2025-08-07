@@ -1,5 +1,4 @@
 #include <zlib.h>
-
 #include <iostream>
 
 #include "Liberty.h"
@@ -32,13 +31,12 @@ std::optional<float> CellLib::extract_operating_conditions(token_iterator& itr, 
     }
 
     int stack = 1;
-
     while (stack && ++itr != end) {
         // variable 1
         if (*itr == "voltage") {  // Read the variable.
 
             if (++itr == end) {
-                logger.info("volate error in operating_conditions template ", operating_condition_name);
+                logger.info("volate error in operating_conditions template %s", operating_condition_name);
             }
 
             voltage = std::strtof(std::string(*itr).c_str(), nullptr);
@@ -47,6 +45,7 @@ std::optional<float> CellLib::extract_operating_conditions(token_iterator& itr, 
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
     }
 
@@ -102,7 +101,12 @@ LutTemplate* CellLib::extract_lut_template(token_iterator& itr, const token_iter
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
+    }
+
+    if (stack != 0 || *itr != "}") {
+        logger.info("can't find lut template brace '}'");
     }
 
     lut_templates_[lt->name] = lt;
@@ -117,26 +121,22 @@ Lut* CellLib::extract_lut(token_iterator& itr, const token_iterator end) {
         logger.info("can't find lut template name");
     }
 
-    // Set up the template
     lut->lut_template = get_lut_template(lut->name);
 
-    // Extract the lut group
     if (itr = std::find(itr, end, "{"); itr == end) {
         logger.info("group brace '{' error in lut ", lut->name);
     }
 
     int stack = 1;
-
     size_t size1 = 1;
     size_t size2 = 1;
-
     while (stack && ++itr != end) {
         if (*itr == "index_1") {
             itr = on_next_parentheses(
                 itr, end, [&](auto& v) mutable { lut->indices1.push_back(std::strtof(v.data(), nullptr)); });
 
             if (lut->indices1.size() == 0) {
-                logger.info("syntax error in ", lut->name, " index_1");
+                logger.info("syntax error in %s index_1", lut->name);
             }
 
             size1 = lut->indices1.size();
@@ -145,21 +145,21 @@ Lut* CellLib::extract_lut(token_iterator& itr, const token_iterator end) {
                 itr, end, [&](auto& v) mutable { lut->indices2.push_back(std::strtof(v.data(), nullptr)); });
 
             if (lut->indices2.size() == 0) {
-                logger.info("syntax error in ", lut->name, " index_2");
+                logger.info("syntax error in %s index_2", lut->name);
             }
 
             size2 = lut->indices2.size();
         } else if (*itr == "values") {
             if (lut->indices1.empty()) {
                 if (size1 != 1) {
-                    logger.info("empty indices1 in non-scalar lut ", lut->name);
+                    logger.info("empty indices1 in non-scalar lut %s", lut->name);
                 }
                 lut->indices1.resize(size1);
             }
 
             if (lut->indices2.empty()) {
                 if (size2 != 1) {
-                    logger.info("empty indices2 in non-scalar lut ", lut->name);
+                    logger.info("empty indices2 in non-scalar lut %s", lut->name);
                 }
                 lut->indices2.resize(size2);
             }
@@ -174,6 +174,7 @@ Lut* CellLib::extract_lut(token_iterator& itr, const token_iterator end) {
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
     }
 
@@ -226,6 +227,7 @@ TimingArc* CellLib::extractTimingArc(token_iterator& itr, const token_iterator e
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
     }
 
@@ -241,7 +243,9 @@ LibertyPort* CellLib::extractLibertyPort(token_iterator& itr, const token_iterat
     cell_port->cell_ = liberty_cell;
 
     on_next_parentheses(itr, end, [&](auto& name) mutable { cell_port->name = name; });
-    itr = std::find(itr, end, "{");
+    if (itr = std::find(itr, end, "{"); itr == end) {
+        logger.info("can't find group brace '{' in port");
+    }
 
     int stack = 1;
     while (stack && ++itr != end) {
@@ -292,16 +296,12 @@ LibertyPort* CellLib::extractLibertyPort(token_iterator& itr, const token_iterat
         } else if (*itr == "timing") {
             TimingArc* timing_arc_ = extractTimingArc(itr, end, cell_port);
             bool test = true;
-            // if (cellpin.timings.back().type) {
-            //     std::string related_pin = cellpin.timings.back().related_pin;
-            //     if (related_pin.empty()) continue;
-            //     cellpin.timings_map[related_pin][*cellpin.timings.back().type] = cellpin.timings.size() - 1;
-            // }
         } else if (*itr == "}") {
             stack--;
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
     }
 
@@ -317,7 +317,7 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
 
     on_next_parentheses(itr, end, [&](auto& name) mutable { liberty_cell->name = name; });
     if (itr = std::find(itr, end, "{"); itr == end) {
-        logger.info("can't find group brace '{' in cell ", liberty_cell->name);
+        logger.info("can't find group brace '{' in cell %s", liberty_cell->name);
     }
 
     int stack = 1;
@@ -332,7 +332,7 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
             int stack_1 = 1;
             while (stack_1 && ++itr != end) {
                 if (*itr == "value") {
-                    logger.infoif(++itr == end, "can't get value in cell ", liberty_cell->name);
+                    logger.infoif(++itr == end, "can't get value in cell %s", liberty_cell->name);
                     liberty_cell->leakage_powers_.push_back(std::strtof(itr->data(), nullptr));
                 } else if (*itr == "}")
                     stack_1--;
@@ -340,21 +340,19 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
                     stack_1++;
             }
         } else if (*itr == "area") {
-            logger.infoif(++itr == end, "can't get area in cell ", liberty_cell->name);
+            logger.infoif(++itr == end, "can't get area in cell %s", liberty_cell->name);
             liberty_cell->area_ = std::strtof(itr->data(), nullptr);
         } else if (*itr == "pin") {
-            logger.infoif(++itr == end, "can't get port in cell ", liberty_cell->name);
+            logger.infoif(++itr == end, "can't get port in cell %s", liberty_cell->name);
             LibertyPort* cell_port_ = extractLibertyPort(itr, end, liberty_cell);
             liberty_cell->ports_.push_back(cell_port_);
-            // liberty_cell->ports_map_[cell_port_->name] = liberty_cell->ports_.size() - 1;
         } else if (*itr == "bundle") {
             LibertyPort* cell_port_bundle = new LibertyPort();
             liberty_cell->ports_.push_back(cell_port_bundle);
-            std::queue<string> members;
-            // liberty_cell->ports_map_[cell_port_bundle->name] = liberty_cell->ports_.size() - 1;
             cell_port_bundle->cell_ = liberty_cell;
             cell_port_bundle->is_bundle_ = true;
 
+            std::queue<string> members;
             on_next_parentheses(itr, end, [&](auto& name) mutable { cell_port_bundle->name = name; });
             itr = std::find(itr, end, "{");
 
@@ -381,6 +379,7 @@ LibertyCell* CellLib::extractLibertyCell(token_iterator& itr, const token_iterat
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
     }
 
@@ -486,21 +485,14 @@ void CellLib::read(const std::string& file) {
         } else if (*itr == "cell") {
             LibertyCell* libterty_cell = extractLibertyCell(itr, end);
             lib_cells_[libterty_cell->name] = libterty_cell;
-            // string cell_name = cell.name;
-            // cells[cell_name] = std::move(cell);
-            // if (rawdb) {
-            //     auto celltype = rawdb->getCellType(cell_name);
-            //     celltype->libCell = &cells[cell_name];
-            // }
         } else if (*itr == "}") {
             stack--;
         } else if (*itr == "{") {
             stack++;
         } else {
+            // undefined token TODO:
         }
     }
-
-    // apply_default_values();
 }
 
 void CellLib::finish_port_read(LibertyPort* liberty_port) {
@@ -537,11 +529,7 @@ void CellLib::finish_port_read(LibertyPort* liberty_port) {
 }
 
 void CellLib::finish_read() {
-    std::cout << lib_cells_.size() << std::endl;
     for (auto [name, liberty_cell] : lib_cells_) {
-        if (name == "DFFHQNx1_ASAP7_75t_R") {
-            bool debug = true;
-        }
         db::CellType* lef_cell_type = rawdb->getCellType(name);
         if (lef_cell_type == nullptr) {
             logger.warning("cell %s not found in lef", name.c_str());
@@ -583,7 +571,6 @@ void CellLib::finish_read() {
                 non_bundle_port = port->member_ports_[0];
             } else
                 non_bundle_port = port;
-            // std::cout << "cell: " << liberty_cell->name << " port: " << port->name << std::endl;
             for (auto kvp : non_bundle_port->timing_arcs_map_) {
                 // string encode_str = kvp.first;
                 // std::cout << encode_str << std::endl;
